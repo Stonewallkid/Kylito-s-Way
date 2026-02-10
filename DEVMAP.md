@@ -71,8 +71,9 @@
 - [ ] Web Workers for OSM parsing
 
 ### Phase 2: Backend Infrastructure
+- [x] Client-side localStorage cache for elevation and OSM data (7-day expiry)
 - [ ] Node.js server for API proxying
-- [ ] Redis cache for OSM tiles
+- [ ] Redis cache for OSM tiles (server-side)
 - [ ] PostgreSQL + PostGIS for world data
 - [ ] User accounts (Supabase Auth)
 - [ ] Cloud save for worlds/edits
@@ -166,6 +167,10 @@
 - Added basic LOD - skip window/roof details for distant buildings
 - Added debug panel (F3) - shows FPS, chunks, terrain info, position, velocity, draw calls
 - Fixed chunk terrain causing raised plateaus (disabled chunk terrain meshes)
+- Increased road widths (residential 5→8m, secondary 7→10m, primary 10→14m)
+- Improved terrain smoothness (41x41 grid + box filter smoothing)
+- Added loading spinner and patience message for large cities
+- Added localStorage caching for elevation and OSM data (7-day expiry)
 
 ---
 
