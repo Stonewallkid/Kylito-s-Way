@@ -429,6 +429,7 @@ async function fetchElevation(){
   // Make elevation relative to center point so spawn ≈ y=0
   const centerIdx=Math.floor(N/2)*N+Math.floor(N/2);
   const centerElev=allElevs[centerIdx]||0;
+  terrainMinElev=centerElev; // Store for chunk normalization
   terrainElevs=allElevs.map(e=>e-centerElev);
   const minE=Math.min(...terrainElevs),maxE=Math.max(...terrainElevs);
   console.log('Elevation loaded:',N+'x'+N,'center='+centerElev.toFixed(1)+'m',
