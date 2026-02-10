@@ -254,6 +254,9 @@ let camYawTarget=0,camAutoFollow=true;
 let terrainElevs=null,terrainGridN=0,terrainMinElev=0,terrainSize=0;
 // Paintball
 let paintMode=false,paintColor='#ff3366',paintBalls=[],paintSplats=[];
+// Object pools for performance
+const ballPool=[],splatPool=[];
+const BALL_POOL_SIZE=50,SPLAT_POOL_SIZE=350;
 const PAINT_SPEED=120,PAINT_GRAV=-6,PAINT_COLORS=['#ff3366','#33ff66','#3366ff','#ffff33','#ff66ff','#ff8800','#00ffff','#ffffff'];
 const CAR_COLORS=[0xf0f0f0,0xe8e8e8,0x1a1a1a,0x111111,0x888888,0x999999,0x666666,0x771111,0xbb2222,0x112266,0x1144aa,0x114411,0x665522,0xaa8844,0xddddcc];
 const setS=(m,e)=>{const el=document.getElementById('st');el.textContent=m;el.className=e?'err':''};
@@ -1980,22 +1983,34 @@ function shootAtScreen(sx,sy){
   firePaintball(src,dir);
 }
 function firePaintball(src,dir){
-  const ball=new THREE.Mesh(
-    new THREE.SphereGeometry(.12,6,6),
-    new THREE.MeshBasicMaterial({color:new THREE.Color(paintColor)})
-  );
+  let ball;
+  if(ballPool.length>0){
+    ball=ballPool.pop();
+    ball.material.color.set(paintColor);
+    ball.visible=true;
+  }else{
+    ball=new THREE.Mesh(
+      new THREE.SphereGeometry(.12,6,6),
+      new THREE.MeshBasicMaterial({color:new THREE.Color(paintColor)})
+    );
+    scene.add(ball);
+  }
   ball.position.copy(src);
   ball.userData.vel=dir.multiplyScalar(PAINT_SPEED);
   ball.userData.color=paintColor;
   ball.userData.life=3;
-  scene.add(ball);
   paintBalls.push(ball);
+}
+function recycleBall(b,i){
+  b.visible=false;
+  paintBalls.splice(i,1);
+  if(ballPool.length<BALL_POOL_SIZE)ballPool.push(b);
 }
 function updatePaintballs(dt){
   for(let i=paintBalls.length-1;i>=0;i--){
     const b=paintBalls[i];
     b.userData.life-=dt;
-    if(b.userData.life<=0){scene.remove(b);paintBalls.splice(i,1);continue}
+    if(b.userData.life<=0){recycleBall(b,i);continue}
     // Physics
     b.userData.vel.y+=PAINT_GRAV*dt;
     const nx=b.position.x+b.userData.vel.x*dt;
@@ -2005,12 +2020,12 @@ function updatePaintballs(dt){
     const gY=getTerrainY(nx,nz)+.1;
     if(ny<=gY){
       createSplat(nx,gY+.02,nz,b.userData.color,'ground');
-      scene.remove(b);paintBalls.splice(i,1);continue;
+      recycleBall(b,i);continue;
     }
     // Building collision
     if(ptInBuilding(nx,nz)){
       createSplat(b.position.x,b.position.y,b.position.z,b.userData.color,'wall');
-      scene.remove(b);paintBalls.splice(i,1);continue;
+      recycleBall(b,i);continue;
     }
     // Vehicle collision
     let hitV=false;
@@ -2018,18 +2033,36 @@ function updatePaintballs(dt){
       const dx=nx-v.position.x,dz=nz-v.position.z,dy=ny-v.position.y;
       if(dx*dx+dz*dz<4&&dy>-0.5&&dy<2.5){
         createSplat(b.position.x,b.position.y,b.position.z,b.userData.color,'wall');
-        scene.remove(b);paintBalls.splice(i,1);hitV=true;break;
+        recycleBall(b,i);hitV=true;break;
       }
     }
     if(hitV)continue;
     b.position.set(nx,ny,nz);
   }
 }
+function recycleSplat(splatObj){
+  splatObj.mesh.visible=false;
+  if(splatPool.length<SPLAT_POOL_SIZE)splatPool.push(splatObj.mesh);
+}
+function getSplatMesh(isCircle,size,color){
+  // Try to get from pool
+  if(splatPool.length>0){
+    const mesh=splatPool.pop();
+    mesh.material.color.set(color);
+    mesh.visible=true;
+    mesh.rotation.set(0,0,0);
+    return mesh;
+  }
+  // Create new
+  const geo=isCircle?new THREE.CircleGeometry(size,8):new THREE.PlaneGeometry(size*.3,size*1.5);
+  const mat=new THREE.MeshBasicMaterial({color:new THREE.Color(color),transparent:true,opacity:isCircle?.85:.6,depthWrite:false,side:THREE.DoubleSide});
+  const mesh=new THREE.Mesh(geo,mat);
+  scene.add(mesh);
+  return mesh;
+}
 function createSplat(x,y,z,color,surface){
   const size=.15+Math.random()*.25;
-  const geo=new THREE.CircleGeometry(size,8);
-  const mat=new THREE.MeshBasicMaterial({color:new THREE.Color(color),transparent:true,opacity:.85,depthWrite:false});
-  const splat=new THREE.Mesh(geo,mat);
+  const splat=getSplatMesh(true,size,color);
   if(surface==='ground'){
     splat.rotation.x=-Math.PI/2;
     splat.position.set(x+(.5-Math.random())*.2,y,z+(.5-Math.random())*.2);
@@ -2041,24 +2074,18 @@ function createSplat(x,y,z,color,surface){
     splat.position.x+=(.5-Math.random())*.15;
     splat.position.y+=(.5-Math.random())*.15;
   }
-  // Add drip effect - small elongated splats below
-  scene.add(splat);
   paintSplats.push({mesh:splat,time:0});
   // Tiny drip
   if(surface==='wall'&&Math.random()>.4){
-    const drip=new THREE.Mesh(
-      new THREE.PlaneGeometry(size*.3,size*1.5+Math.random()*.4),
-      new THREE.MeshBasicMaterial({color:new THREE.Color(color),transparent:true,opacity:.6,depthWrite:false,side:THREE.DoubleSide})
-    );
+    const drip=getSplatMesh(false,size,color);
     drip.position.set(x+(.5-Math.random())*.1,y-size*.8-Math.random()*.3,z);
     drip.lookAt(camera.position);
-    scene.add(drip);
     paintSplats.push({mesh:drip,time:0});
   }
-  // Limit total splats
+  // Limit total splats - recycle oldest
   while(paintSplats.length>300){
     const old=paintSplats.shift();
-    scene.remove(old.mesh);
+    recycleSplat(old);
   }
 }
 
@@ -2263,8 +2290,7 @@ function gameLoop(){
   if(selHighlight)selHighlight.material.opacity=.3+.3*Math.sin(Date.now()*.005);
   // Paintball physics
   if(paintMode)updatePaintballs(dt);
-  // Track velocity for predictive chunk loading
-  const tgt=activeVehicle||player;
+  // Track velocity for predictive chunk loading (uses tgt from address detection above)
   if(tgt){
     const vx=(tgt.position.x-lastPosX)/dt,vz=(tgt.position.z-lastPosZ)/dt;
     playerVelX=playerVelX*.8+vx*.2; // Smooth velocity
