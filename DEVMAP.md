@@ -15,6 +15,7 @@
 - [x] Player movement (WASD, sprint, jump)
 - [x] Third-person camera with auto-follow
 - [x] Mapillary API integration for real street furniture (lights, hydrants, benches, signs)
+- [x] Water bodies from OSM (rivers, creeks, lakes) with drowning mechanic
 
 ### Vehicles
 - [x] Sedan, SUV, truck types
@@ -184,6 +185,9 @@
   - Falls back to random lamps if Mapillary coverage is sparse
 - Fixed extreme cliff terrain - added multi-pass Gaussian smoothing + slope limiter
 - Added E-brake drifting (Shift key when in vehicle) - slide/drift around corners
+- Added water bodies (rivers, creeks, lakes) rendered as blue transparent surfaces
+- Added drowning mechanic - stay underwater 2+ seconds = respawn
+- Vehicles stall and eject player when driven into water
 
 ---
 

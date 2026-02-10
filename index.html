@@ -258,7 +258,7 @@ const isMobile=/Mobi|Android|iPhone|iPad/i.test(navigator.userAgent);
 let scene,camera,renderer,clock,player,velY=0,onGround=true;
 let mF=0,mB=0,mL=0,mR=0,sprinting=false,yaw=0,pitch=.35;
 let cLat,cLon,spawnX=0,spawnZ=0,locName='',locKey='',spawnAddr='';
-let bData=[],rData=[],buildingAddrs=[];
+let bData=[],rData=[],buildingAddrs=[],waterData=[];
 let minimapCtx,joyVec={x:0,y:0},lookTID=null,lookLX=0,lookLY=0;
 let vehicles=[],activeVehicle=null,carAccelInput=0,carBrakeInput=0,carEBrake=0;
 let editMode=false,editTool='select',userEdits=[],roadPoints=[],fencePoints=[],selectedEdit=null,selectedVehicle=null,selHighlight=null,moveMode=false;
@@ -283,7 +283,7 @@ const BALL_POOL_SIZE=50,SPLAT_POOL_SIZE=350;
 const PAINT_SPEED=120,PAINT_GRAV=-6,PAINT_COLORS=['#ff3366','#33ff66','#3366ff','#ffff33','#ff66ff','#ff8800','#00ffff','#ffffff'];
 const CAR_COLORS=[0xf0f0f0,0xe8e8e8,0x1a1a1a,0x111111,0x888888,0x999999,0x666666,0x771111,0xbb2222,0x112266,0x1144aa,0x114411,0x665522,0xaa8844,0xddddcc];
 // ═══ CACHING SYSTEM ═══
-const CACHE_VERSION=1,CACHE_EXPIRY=7*24*60*60*1000; // 7 days
+const CACHE_VERSION=9,CACHE_EXPIRY=7*24*60*60*1000; // 7 days - v9: debug lat/lon grid
 function getCacheKey(type,lat,lon){return`kw_${type}_${lat.toFixed(4)}_${lon.toFixed(4)}_v${CACHE_VERSION}`}
 function getCache(key){
   try{
@@ -797,19 +797,24 @@ async function fetchElevation(){
       lats.push(lat);lons.push(lon);
     }
   }
+  console.log('Elevation grid: lat range',Math.min(...lats).toFixed(5),'to',Math.max(...lats).toFixed(5),
+    'lon range',Math.min(...lons).toFixed(5),'to',Math.max(...lons).toFixed(5));
   // Batch into groups of 100 for URL length limits
   const batchSz=100,allElevs=[];
+  console.log('Fetching elevation for',N*N,'points around',cLat.toFixed(5),cLon.toFixed(5));
   for(let b=0;b<lats.length;b+=batchSz){
     const bLats=lats.slice(b,b+batchSz),bLons=lons.slice(b,b+batchSz);
     const url='https://api.open-meteo.com/v1/elevation?latitude='+bLats.join(',')+'&longitude='+bLons.join(',');
     try{
       let r;
-      try{r=await fetch(url)}catch(e){r=await cfetch(url)}
+      try{r=await fetch(url)}catch(e){console.log('Direct fetch failed, using proxy');r=await cfetch(url)}
       const d=await r.json();
+      console.log('Elevation batch',b/batchSz+1,'response:',d.elevation?d.elevation.slice(0,5):'NO DATA',d.error||'');
       if(d.elevation)allElevs.push(...d.elevation);
-      else throw new Error('No elevation data');
+      else throw new Error('No elevation data: '+JSON.stringify(d));
     }catch(e){console.warn('Elevation batch failed:',e);for(let i=0;i<bLats.length;i++)allElevs.push(0)}
   }
+  console.log('All elevs sample:',allElevs.slice(0,10),'unique values:',new Set(allElevs).size);
   if(!allElevs.length||allElevs.every(e=>e===0))return false;
   // Make elevation relative to center point so spawn ≈ y=0
   const centerIdx=Math.floor(N/2)*N+Math.floor(N/2);
@@ -817,70 +822,9 @@ async function fetchElevation(){
   terrainMinElev=centerElev; // Store for chunk normalization
   let elevs=allElevs.map(e=>e-centerElev);
 
-  // Check raw elevation spread
+  // No smoothing - use raw elevation data directly
   const rawMin=Math.min(...elevs),rawMax=Math.max(...elevs),rawSpread=rawMax-rawMin;
-  console.log('Raw elevation spread:',rawSpread.toFixed(1)+'m');
-
-  // If spread is extreme (>40m over 1km), compress it to make terrain playable
-  // This keeps hills visible but prevents cliffs
-  const maxSpread=40; // Max 40m of elevation change across the map
-  if(rawSpread>maxSpread){
-    const scale=maxSpread/rawSpread;
-    elevs=elevs.map(e=>e*scale);
-    console.log('Compressed elevation by',scale.toFixed(2)+'x');
-  }
-
-  // Heavy smoothing - 6 passes of Gaussian blur
-  const w=[[1,2,1],[2,4,2],[1,2,1]];
-  for(let pass=0;pass<6;pass++){
-    const smoothed=new Array(N*N);
-    for(let r=0;r<N;r++){
-      for(let c=0;c<N;c++){
-        let sum=0,wSum=0;
-        for(let dr=-1;dr<=1;dr++){
-          for(let dc=-1;dc<=1;dc++){
-            const nr=r+dr,nc=c+dc;
-            if(nr>=0&&nr<N&&nc>=0&&nc<N){
-              const weight=w[dr+1][dc+1];
-              sum+=elevs[nr*N+nc]*weight;
-              wSum+=weight;
-            }
-          }
-        }
-        smoothed[r*N+c]=sum/wSum;
-      }
-    }
-    elevs=smoothed;
-  }
-
-  // Slope limiting - max 3m change between adjacent cells (~27m apart = 11% grade)
-  const maxSlope=3;
-  for(let iter=0;iter<4;iter++){
-    const limited=elevs.slice();
-    for(let r=0;r<N;r++){
-      for(let c=0;c<N;c++){
-        const idx=r*N+c;
-        const e=elevs[idx];
-        // Average with slope-clamped neighbors
-        let sum=e,cnt=1;
-        const neighbors=[[r-1,c],[r+1,c],[r,c-1],[r,c+1]];
-        for(const[nr,nc]of neighbors){
-          if(nr>=0&&nr<N&&nc>=0&&nc<N){
-            const ne=elevs[nr*N+nc];
-            const diff=ne-e;
-            if(Math.abs(diff)>maxSlope){
-              sum+=e+(diff>0?maxSlope:-maxSlope);
-            }else{
-              sum+=ne;
-            }
-            cnt++;
-          }
-        }
-        limited[idx]=sum/cnt;
-      }
-    }
-    elevs=limited;
-  }
+  console.log('Raw elevation spread:',rawSpread.toFixed(1)+'m, min:',rawMin.toFixed(1),'max:',rawMax.toFixed(1));
 
   terrainElevs=elevs;
   // Save to cache
@@ -1551,7 +1495,7 @@ async function loadChunk(cx,cz){
     const elevPromise=fetchChunkElevation(cx,cz,chunk);
     const deg=CHUNK_SIZE/111320*0.6;
     const bb=(center.lat-deg)+','+(center.lon-deg)+','+(center.lat+deg)+','+(center.lon+deg);
-    const q='[out:json][timeout:30];(way["building"]('+bb+');way["highway"]('+bb+');way["natural"="water"]('+bb+');way["leisure"="park"]('+bb+');way["barrier"]('+bb+');node["natural"="tree"]('+bb+'););out body;>;out skel qt;';
+    const q='[out:json][timeout:30];(way["building"]('+bb+');way["highway"]('+bb+');way["natural"="water"]('+bb+');way["water"]('+bb+');way["waterway"]('+bb+');way["leisure"="park"]('+bb+');way["barrier"]('+bb+');node["natural"="tree"]('+bb+'););out body;>;out skel qt;';
     const urls=['https://overpass-api.de/api/interpreter','https://overpass.kumi.systems/api/interpreter'];
     let osm=null;
     for(const u of urls){
@@ -1956,7 +1900,7 @@ async function fetchOSM(){
 
   const deg=RADIUS/111320,bb=cLat-deg+','+(cLon-deg)+','+(cLat+deg)+','+(cLon+deg);
   // Also fetch landuse=residential for grass yards
-  const q='[out:json][timeout:45];(way["building"]('+bb+');way["highway"]('+bb+');way["natural"="water"]('+bb+');way["leisure"="park"]('+bb+');way["landuse"]('+bb+');way["barrier"]('+bb+');way["natural"="tree_row"]('+bb+');node["natural"="tree"]('+bb+');way["man_made"="fence"]('+bb+'););out body;>;out skel qt;';
+  const q='[out:json][timeout:45];(way["building"]('+bb+');way["highway"]('+bb+');way["natural"="water"]('+bb+');way["water"]('+bb+');way["waterway"]('+bb+');way["leisure"="park"]('+bb+');way["landuse"]('+bb+');way["barrier"]('+bb+');way["natural"="tree_row"]('+bb+');node["natural"="tree"]('+bb+');way["man_made"="fence"]('+bb+'););out body;>;out skel qt;';
   const urls=['https://overpass-api.de/api/interpreter','https://overpass.kumi.systems/api/interpreter'];
   for(const u of urls){try{const r=await cfetch(u,{method:'POST',body:'data='+encodeURIComponent(q)});setP(40);const d=await r.json();setP(60);setCache(cacheKey,d);return d}catch(e){continue}}
   throw new Error('Map download failed');
@@ -1998,6 +1942,8 @@ const ROOF_COLORS=[0x553322,0x664433,0x443322,0x332211,0x554433,0x3a2a1a,0x5a3a2
 
 function buildWorld(osm,mapillaryData=[]){
   setS('Building world...');setP(70);
+  // Clear previous world data
+  bData=[];rData=[];buildingAddrs=[];waterData=[];barrierData=[];
   const nodes={};osm.elements.forEach(el=>{if(el.type==='node')nodes[el.id]=el});
   const ways=osm.elements.filter(el=>el.type==='way'&&el.nodes);
   let bc=0,rc=0;const streetNames=new Set();
@@ -2121,8 +2067,67 @@ function buildWorld(osm,mapillaryData=[]){
     else if(tags.leisure==='park'){
       if(coords.length>=3){try{const cx=coords.reduce((s,c)=>s+c.x,0)/coords.length,cz=coords.reduce((s,c)=>s+c.z,0)/coords.length;const ty=getTerrainY(cx,cz);if(tags.name)makeLabel('🌳 '+tags.name,cx,ty+2,cz,18,'rgba(100,255,100,0.8)');for(let t=0;t<Math.min(isMobile?4:8,coords.length);t++)addTree(cx+(Math.random()-.5)*40,cz+(Math.random()-.5)*40)}catch(e){}}
     }
-    else if(tags.natural==='water'){
-      // Skip flat water overlays on terrain - they float/clip
+    else if(tags.natural==='water'||tags.water){
+      // Lakes/ponds - render as filled blue polygon (only if it's a closed shape)
+      if(coords.length>=4){
+        try{
+          // Check if polygon is closed (first and last point are close)
+          const first=coords[0],last=coords[coords.length-1];
+          const isClosed=Math.abs(first.x-last.x)<1&&Math.abs(first.z-last.z)<1;
+          if(isClosed){
+            const cx=coords.reduce((s,c)=>s+c.x,0)/coords.length;
+            const cz=coords.reduce((s,c)=>s+c.z,0)/coords.length;
+            const waterY=getTerrainY(cx,cz)-0.3; // Slightly below terrain
+            const shape=new THREE.Shape();
+            shape.moveTo(coords[0].x,coords[0].z);
+            for(let i=1;i<coords.length;i++)shape.lineTo(coords[i].x,coords[i].z);
+            shape.closePath();
+            const waterGeo=new THREE.ShapeGeometry(shape);
+            waterGeo.rotateX(-Math.PI/2);
+            const waterMat=new THREE.MeshBasicMaterial({color:0x2266aa,transparent:true,opacity:0.6,side:THREE.DoubleSide});
+            const waterMesh=new THREE.Mesh(waterGeo,waterMat);
+            waterMesh.position.y=waterY;
+            scene.add(waterMesh);
+            if(tags.name)makeLabel('💧 '+tags.name,cx,waterY+2,cz,16,'rgba(100,180,255,0.9)');
+          }
+        }catch(e){}
+      }
+    }
+    else if(tags.waterway){
+      // Rivers/streams - render as blue ribbon along the path
+      if(coords.length>=2){
+        try{
+          // Width based on waterway type
+          let width=3;
+          if(tags.waterway==='river')width=8;
+          else if(tags.waterway==='stream'||tags.waterway==='creek')width=3;
+          else if(tags.waterway==='canal')width=6;
+          else if(tags.waterway==='ditch'||tags.waterway==='drain')width=1.5;
+          // Create ribbon segments
+          for(let i=0;i<coords.length-1;i++){
+            const p1=coords[i],p2=coords[i+1];
+            const dx=p2.x-p1.x,dz=p2.z-p1.z;
+            const len=Math.sqrt(dx*dx+dz*dz);
+            if(len<0.5)continue;
+            const mx=(p1.x+p2.x)/2,mz=(p1.z+p2.z)/2;
+            const waterY=getTerrainY(mx,mz)-0.2;
+            const ang=Math.atan2(dx,dz);
+            const seg=new THREE.Mesh(
+              new THREE.PlaneGeometry(width,len),
+              new THREE.MeshBasicMaterial({color:0x2266aa,transparent:true,opacity:0.6,side:THREE.DoubleSide})
+            );
+            seg.rotation.x=-Math.PI/2;
+            seg.rotation.z=-ang;
+            seg.position.set(mx,waterY,mz);
+            scene.add(seg);
+          }
+          if(tags.name){
+            const midIdx=Math.floor(coords.length/2);
+            const mid=coords[midIdx];
+            makeLabel('💧 '+tags.name,mid.x,getTerrainY(mid.x,mid.z)+2,mid.z,14,'rgba(100,180,255,0.9)');
+          }
+        }catch(e){}
+      }
     }
     // ═══ BARRIERS: fences, walls, hedges ═══
     else if(tags.barrier||tags.man_made==='fence'){
@@ -2271,6 +2276,48 @@ function ptInBuilding(x,z){
   for(const b of bData)if(b.coords.length>=3&&ptInPoly(x,z,b.coords))return true;
   if(ptNearBarrier(x,z,0.6))return true;
   return false;
+}
+function ptInWater(x,z){
+  for(const w of waterData){
+    if(w.coords.length>=3&&ptInPoly(x,z,w.coords))return w;
+  }
+  return null;
+}
+let drowning=false,drownTimer=0;
+function checkDrowning(x,y,z){
+  const water=ptInWater(x,z);
+  if(water){
+    // Calculate depth based on distance from shore (center = deeper)
+    const distFromCenter=Math.sqrt((x-water.cx)**2+(z-water.cz)**2);
+    const depthRatio=1-Math.min(1,distFromCenter/(water.maxDist||10));
+    const localDepth=water.depth*depthRatio; // Deeper toward center
+    const waterSurface=water.centerY;
+    const waterBottom=waterSurface-localDepth;
+    const headY=y+1.8; // Player head height
+    // Drown if head below water surface AND standing on bottom
+    if(y<waterBottom+0.5&&headY<waterSurface){
+      drownTimer+=0.016; // Roughly per frame
+      if(drownTimer>2){ // 2 seconds underwater = drown
+        return true;
+      }
+    }else{
+      drownTimer=Math.max(0,drownTimer-0.03); // Recover when head above water
+    }
+  }else{
+    drownTimer=0;
+  }
+  return false;
+}
+function respawn(){
+  // Respawn at original spawn point
+  if(activeVehicle)exitV();
+  if(player){
+    player.position.set(spawnX,getTerrainY(spawnX,spawnZ)+0.15,spawnZ);
+    velY=0;
+    drownTimer=0;
+  }
+  setS('You drowned! Respawned.');
+  setTimeout(()=>setS(''),2000);
 }
 function findNearest(){if(!player)return null;let b=null,bd=ENTER_DIST**2;for(const v of vehicles){const d=(v.position.x-player.position.x)**2+(v.position.z-player.position.z)**2;if(d<bd){bd=d;b=v}}return b}
 function enterV(v){activeVehicle=v;player.visible=false;carAccelInput=0;carBrakeInput=0;document.getElementById('speedometer').style.display='block';document.getElementById('vp').style.display='none';if(isMobile)updateBtns()}
@@ -2697,35 +2744,36 @@ function updateCompass(){const n=document.getElementById('compass-needle'),hd=do
 function gameLoop(){
   requestAnimationFrame(gameLoop);const dt=Math.min(clock.getDelta(),.1);let camTarget;
   if(activeVehicle){
-    const v=activeVehicle;let ac=0,br=0,st=0,eb=carEBrake;
+    const v=activeVehicle;let ac=0,br=0,st=0,drift=carEBrake;
     if(mF)ac=1;if(mB)br=1;if(mL)st=1;if(mR)st=-1;
     if(carAccelInput)ac=1;if(carBrakeInput)br=1;
     if(Math.abs(joyVec.x)>.15)st=-joyVec.x;if(joyVec.y<-.2)ac=Math.min(1,-joyVec.y);if(joyVec.y>.2)br=Math.min(1,joyVec.y);
     let spd=v.userData.speed;
-    // E-brake drift: lock rear wheels, reduce grip, allow oversteer
-    if(eb&&Math.abs(spd)>3){
-      // Decelerate but not as hard as normal brake
-      spd*=1-(dt*1.5);
-      // Allow much faster steering (drift!)
-      const driftSteer=st*CAR_STEER*2.5*dt*(spd>=0?1:-1);
-      v.userData.angle+=driftSteer;
-      // Slide sideways based on speed and steering input
-      const slideAngle=v.userData.angle+Math.PI/2;
-      const slideForce=st*Math.abs(spd)*0.15*dt;
-      const slideX=Math.sin(slideAngle)*slideForce;
-      const slideZ=Math.cos(slideAngle)*slideForce;
-      if(!ptInBuilding(v.position.x+slideX,v.position.z+slideZ)){
-        v.position.x+=slideX;v.position.z+=slideZ;
-      }
-    }else{
-      spd+=ac*CAR_ACCEL*dt;
-      if(br){if(spd>0)spd-=CAR_BRAKE*dt;else spd-=CAR_ACCEL*.4*dt}
-      if(!ac&&!br){if(spd>0)spd=Math.max(0,spd-CAR_FRICTION*dt);else if(spd<0)spd=Math.min(0,spd+CAR_FRICTION*dt)}
-      spd-=spd*CAR_DRAG*dt;
-      v.userData.angle+=st*CAR_STEER*dt*Math.min(1,Math.abs(spd)/5)*(spd>=0?1:-1);
-    }
+    // Initialize drift angle if not set
+    if(v.userData.moveAngle===undefined)v.userData.moveAngle=v.userData.angle;
+    // Standard acceleration/braking
+    spd+=ac*CAR_ACCEL*dt;
+    if(br){if(spd>0)spd-=CAR_BRAKE*dt;else spd-=CAR_ACCEL*.4*dt}
+    if(!ac&&!br){if(spd>0)spd=Math.max(0,spd-CAR_FRICTION*dt);else if(spd<0)spd=Math.min(0,spd+CAR_FRICTION*dt)}
+    spd-=spd*CAR_DRAG*dt;
     spd=Math.max(-CAR_MAX*.3,Math.min(CAR_MAX,spd));
-    const nx=v.position.x+Math.sin(v.userData.angle)*spd*dt,nz=v.position.z+Math.cos(v.userData.angle)*spd*dt;
+    // DRIFT MODE: car rotates but movement direction lags behind
+    if(drift&&Math.abs(spd)>3){
+      // Car body rotates fast
+      v.userData.angle+=st*CAR_STEER*3*dt*(spd>=0?1:-1);
+      // Movement direction catches up slowly (creates slide)
+      let angleDiff=v.userData.angle-v.userData.moveAngle;
+      while(angleDiff>Math.PI)angleDiff-=Math.PI*2;
+      while(angleDiff<-Math.PI)angleDiff+=Math.PI*2;
+      v.userData.moveAngle+=angleDiff*0.15; // Slow catch-up = more slide
+    }else{
+      // Normal driving: car faces where it's going
+      v.userData.angle+=st*CAR_STEER*dt*Math.min(1,Math.abs(spd)/5)*(spd>=0?1:-1);
+      v.userData.moveAngle=v.userData.angle; // Instant grip
+    }
+    // Move in movement direction (not facing direction when drifting)
+    const nx=v.position.x+Math.sin(v.userData.moveAngle)*spd*dt;
+    const nz=v.position.z+Math.cos(v.userData.moveAngle)*spd*dt;
     if(!ptInBuilding(nx,nz)){v.position.x=nx;v.position.z=nz}else spd*=-.3;
     v.userData.speed=spd;v.rotation.y=v.userData.angle;
     // Follow terrain - sit on road surface
@@ -2737,6 +2785,17 @@ function gameLoop(){
       const bY=getTerrainY(v.position.x-Math.sin(fa)*probeLen,v.position.z-Math.cos(fa)*probeLen);
       const pitchAngle=Math.atan2(bY-fY,probeLen*2);
       v.rotation.x+=(pitchAngle-v.rotation.x)*.3;
+    }
+    // Vehicle in water - stall and eject player
+    const vWater=ptInWater(v.position.x,v.position.z);
+    if(vWater){
+      v.userData.speed*=0.9; // Slow down in water
+      if(Math.abs(v.userData.speed)<2){
+        // Car stalled in water - eject player
+        exitV();
+        setS('Vehicle stalled in water!');
+        setTimeout(()=>setS(''),2000);
+      }
     }
     document.getElementById('spd-val').textContent=Math.abs(spd*2.237).toFixed(0);
     camTarget=v.position.clone().add(new THREE.Vector3(0,1.5,0));yaw=v.userData.angle+Math.PI;
@@ -2763,6 +2822,8 @@ function gameLoop(){
     velY+=GRAV*dt;player.position.y+=velY*dt;
     const groundY=getTerrainY(player.position.x,player.position.z)+.15;
     if(player.position.y<=groundY){player.position.y=groundY;velY=0;onGround=true}
+    // Drowning check
+    if(checkDrowning(player.position.x,player.position.y,player.position.z)){respawn()}
     animChar(dt,im*spd);
     if(!editMode){const nv=findNearest();const vp=document.getElementById('vp');
       if(nv){vp.textContent=isMobile?nv.userData.type+' — tap CAR':'Press E → '+nv.userData.type;vp.style.display='block';if(isMobile){const cb=document.getElementById('mb-car');if(cb){cb.style.display='flex';cb.ontouchstart=e=>{e.preventDefault();enterV(nv)}}}}
