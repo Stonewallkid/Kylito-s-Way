@@ -417,7 +417,7 @@ function snapSpawnToRoad(){
 
 // ═══ ELEVATION / TERRAIN ═══
 async function fetchElevation(){
-  const N=21; // 21x21 grid = 441 points
+  const N=41; // 41x41 grid = 1681 points for smoother terrain
   const half=RADIUS*1.1;
   terrainSize=half*2;terrainGridN=N;
   const cosLat=Math.cos(cLat*Math.PI/180);
@@ -452,7 +452,22 @@ async function fetchElevation(){
   const centerIdx=Math.floor(N/2)*N+Math.floor(N/2);
   const centerElev=allElevs[centerIdx]||0;
   terrainMinElev=centerElev; // Store for chunk normalization
-  terrainElevs=allElevs.map(e=>e-centerElev);
+  let elevs=allElevs.map(e=>e-centerElev);
+  // Smooth elevation to reduce blockiness (simple box filter)
+  const smoothed=new Array(N*N);
+  for(let r=0;r<N;r++){
+    for(let c=0;c<N;c++){
+      let sum=0,cnt=0;
+      for(let dr=-1;dr<=1;dr++){
+        for(let dc=-1;dc<=1;dc++){
+          const nr=r+dr,nc=c+dc;
+          if(nr>=0&&nr<N&&nc>=0&&nc<N){sum+=elevs[nr*N+nc];cnt++}
+        }
+      }
+      smoothed[r*N+c]=sum/cnt;
+    }
+  }
+  terrainElevs=smoothed;
   const minE=Math.min(...terrainElevs),maxE=Math.max(...terrainElevs);
   console.log('Elevation loaded:',N+'x'+N,'center='+centerElev.toFixed(1)+'m',
     'range='+minE.toFixed(1)+' to '+maxE.toFixed(1)+'m','spread='+(maxE-minE).toFixed(1)+'m');
