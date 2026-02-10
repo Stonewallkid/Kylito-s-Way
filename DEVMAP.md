@@ -65,9 +65,9 @@
 
 ### Phase 1: Performance & Polish
 - [x] Predictive chunk loading based on velocity
-- [ ] LOD (Level of Detail) for distant buildings
+- [x] LOD (Level of Detail) for distant buildings (basic - skip windows/roof detail beyond 200m)
 - [ ] Instanced rendering for trees/lamps
-- [ ] Object pooling for paintballs/splats
+- [x] Object pooling for paintballs/splats
 - [ ] Web Workers for OSM parsing
 
 ### Phase 2: Backend Infrastructure
@@ -161,6 +161,9 @@
 - Set up GitHub repo + Pages
 - Created DEVMAP.md
 - Added predictive chunk loading
+- Fixed duplicate variable declaration bug (game wouldn't start)
+- Added object pooling for paintballs and splats
+- Added basic LOD - skip window/roof details for distant buildings
 
 ---
 

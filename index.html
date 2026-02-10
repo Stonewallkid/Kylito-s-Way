@@ -1601,19 +1601,21 @@ function buildWorld(osm){
           roofMesh.position.set(cx,ty+h+roofH/2,cz);roofMesh.rotation.y=Math.PI/4;roofMesh.castShadow=!isMobile;scene.add(roofMesh);
         }else{
           // COMMERCIAL/TALL: Windows grid + flat roof detail
-          if(h>5){
+          // LOD: Skip windows for distant buildings (>200m from center)
+          const distFromCenter=Math.sqrt(cx*cx+cz*cz);
+          if(h>5&&distFromCenter<200&&!isMobile){
             const winMat=new THREE.MeshBasicMaterial({color:0xffeebb,transparent:true,opacity:.35+Math.random()*.3});
             const wG=new THREE.PlaneGeometry(.5,.7);
             for(let y=2.5;y<h-1;y+=3.2){
               const nWin=Math.floor(Math.max(bw,bd)*1.5);
-              for(let w=0;w<Math.min(nWin,isMobile?4:8);w++){
+              for(let w=0;w<Math.min(nWin,6);w++){
                 const ang=Math.random()*Math.PI*2,dist=Math.max(bw,bd)*.4+.5;
                 const wM=new THREE.Mesh(wG,winMat);wM.position.set(cx+Math.cos(ang)*dist,ty+y,cz+Math.sin(ang)*dist);wM.lookAt(cx,ty+y,cz);scene.add(wM);
               }
             }
           }
-          // Flat roof accent
-          if(h>8){const ra=new THREE.Mesh(new THREE.BoxGeometry(bw*.5,1,bd*.5),new THREE.MeshLambertMaterial({color:col.clone().multiplyScalar(.6)}));ra.position.set(cx,ty+h+.5,cz);scene.add(ra)}
+          // Flat roof accent - also skip if distant
+          if(h>8&&distFromCenter<300){const ra=new THREE.Mesh(new THREE.BoxGeometry(bw*.5,1,bd*.5),new THREE.MeshLambertMaterial({color:col.clone().multiplyScalar(.6)}));ra.position.set(cx,ty+h+.5,cz);scene.add(ra)}
         }
 
         // Address label
