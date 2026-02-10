@@ -283,7 +283,7 @@ const BALL_POOL_SIZE=50,SPLAT_POOL_SIZE=350;
 const PAINT_SPEED=120,PAINT_GRAV=-6,PAINT_COLORS=['#ff3366','#33ff66','#3366ff','#ffff33','#ff66ff','#ff8800','#00ffff','#ffffff'];
 const CAR_COLORS=[0xf0f0f0,0xe8e8e8,0x1a1a1a,0x111111,0x888888,0x999999,0x666666,0x771111,0xbb2222,0x112266,0x1144aa,0x114411,0x665522,0xaa8844,0xddddcc];
 // ═══ CACHING SYSTEM ═══
-const CACHE_VERSION=11,CACHE_EXPIRY=7*24*60*60*1000; // 7 days - v11: procedural terrain fallback
+const CACHE_VERSION=12,CACHE_EXPIRY=7*24*60*60*1000; // 7 days - v12: fixed procedural terrain
 function getCacheKey(type,lat,lon){return`kw_${type}_${lat.toFixed(4)}_${lon.toFixed(4)}_v${CACHE_VERSION}`}
 function getCache(key){
   try{
@@ -822,12 +822,15 @@ async function fetchElevation(){
       }
     }catch(e){}
 
-    // If API failed, generate procedural terrain
+    // If API failed, generate procedural terrain based on grid position
     if(!success){
       for(let i=0;i<bLats.length;i++){
-        // Simple procedural hills using sine waves
-        const lat=bLats[i],lon=bLons[i];
-        const e=Math.sin(lat*500)*8+Math.sin(lon*500)*8+Math.sin((lat+lon)*300)*5;
+        const idx=b+i; // Global index in the grid
+        const row=Math.floor(idx/N),col=idx%N;
+        // Procedural hills using multiple sine waves at different frequencies
+        const x=col/(N-1)*Math.PI*4; // 0 to 4π across grid
+        const z=row/(N-1)*Math.PI*4;
+        const e=Math.sin(x)*10+Math.sin(z)*10+Math.sin(x*2.3+z*1.7)*6+Math.sin(x*0.5-z*0.8)*8;
         allElevs.push(e);
       }
       if(b===0)console.log('Using procedural terrain (API rate limited)');
