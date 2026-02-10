@@ -14,6 +14,7 @@
 - [x] Chunk terrain elevation
 - [x] Player movement (WASD, sprint, jump)
 - [x] Third-person camera with auto-follow
+- [x] Mapillary API integration for real street furniture (lights, hydrants, benches, signs)
 
 ### Vehicles
 - [x] Sedan, SUV, truck types
@@ -21,6 +22,7 @@
 - [x] Driving physics with terrain following
 - [x] Speedometer HUD
 - [x] Collision with buildings
+- [x] E-brake drifting (Shift key) - lock rear wheels and slide
 
 ### Edit Mode
 - [x] Place buildings (house, commercial)
@@ -139,6 +141,7 @@
 
 ## Ideas / Backlog
 
+- [ ] Cliff mode / extreme terrain toggle (exaggerate elevation for fun gameplay)
 - [ ] VR support
 - [ ] AR mode (overlay on camera)
 - [ ] Replay system for matches
@@ -171,6 +174,16 @@
 - Improved terrain smoothness (41x41 grid + box filter smoothing)
 - Added loading spinner and patience message for large cities
 - Added localStorage caching for elevation and OSM data (7-day expiry)
+
+### 2026-02-10
+- Added auto-loading of user edits when revisiting cached locations
+- Added Mapillary API integration for real street furniture
+  - Fetches actual positions of street lights, fire hydrants, benches, trash cans, bollards, mailboxes, traffic signs, crosswalks
+  - Custom 3D models for each object type
+  - MVT (vector tile) decoder for parsing Mapillary tiles
+  - Falls back to random lamps if Mapillary coverage is sparse
+- Fixed extreme cliff terrain - added multi-pass Gaussian smoothing + slope limiter
+- Added E-brake drifting (Shift key when in vehicle) - slide/drift around corners
 
 ---
 

@@ -260,7 +260,7 @@ let mF=0,mB=0,mL=0,mR=0,sprinting=false,yaw=0,pitch=.35;
 let cLat,cLon,spawnX=0,spawnZ=0,locName='',locKey='',spawnAddr='';
 let bData=[],rData=[],buildingAddrs=[];
 let minimapCtx,joyVec={x:0,y:0},lookTID=null,lookLX=0,lookLY=0;
-let vehicles=[],activeVehicle=null,carAccelInput=0,carBrakeInput=0;
+let vehicles=[],activeVehicle=null,carAccelInput=0,carBrakeInput=0,carEBrake=0;
 let editMode=false,editTool='select',userEdits=[],roadPoints=[],fencePoints=[],selectedEdit=null,selectedVehicle=null,selHighlight=null,moveMode=false;
 let barrierData=[];
 let topViewMode=false,topViewHeight=80,topViewX=0,topViewZ=0,parkingCorner=null;
@@ -322,6 +322,298 @@ function clearOldCaches(){
   items.slice(0,Math.ceil(items.length/2)).forEach(i=>localStorage.removeItem(i.k));
   console.log('Cleared',Math.ceil(items.length/2),'old cache entries');
 }
+
+// ═══ MAPILLARY INTEGRATION ═══
+const MAPILLARY_TOKEN='MLY|25955849304074964|c2a83e5e0b8474d8510b5bf8b22a3bad';
+const mapillaryFeatures=[];
+
+// Convert lat/lon to tile coordinates
+function latLonToTile(lat,lon,z){
+  const x=Math.floor((lon+180)/360*Math.pow(2,z));
+  const y=Math.floor((1-Math.log(Math.tan(lat*Math.PI/180)+1/Math.cos(lat*Math.PI/180))/Math.PI)/2*Math.pow(2,z));
+  return{x,y};
+}
+
+// Convert tile pixel to lat/lon
+function tilePixelToLatLon(tileX,tileY,z,px,py,extent=4096){
+  const n=Math.pow(2,z);
+  const lon=(tileX+px/extent)/n*360-180;
+  const latRad=Math.atan(Math.sinh(Math.PI*(1-2*(tileY+py/extent)/n)));
+  const lat=latRad*180/Math.PI;
+  return{lat,lon};
+}
+
+// Minimal MVT (Mapbox Vector Tile) decoder
+function decodeMVT(buffer){
+  // Safety: always return array, never throw
+  if(!buffer||buffer.byteLength<10)return[];
+  try{
+  const view=new DataView(buffer);
+  const features=[];
+  let pos=0;
+
+  function readVarint(){
+    let result=0,shift=0,byte;
+    do{byte=view.getUint8(pos++);result|=(byte&0x7f)<<shift;shift+=7}while(byte>=0x80);
+    return result;
+  }
+  function readSVarint(){const n=readVarint();return(n>>>1)^-(n&1)}
+  function skipField(wireType){
+    if(wireType===0)readVarint();
+    else if(wireType===1)pos+=8;
+    else if(wireType===2)pos+=readVarint();
+    else if(wireType===5)pos+=4;
+  }
+  function readBytes(){const len=readVarint();const bytes=new Uint8Array(buffer,pos,len);pos+=len;return bytes}
+  function readString(){const bytes=readBytes();return new TextDecoder().decode(bytes)}
+
+  // Parse tile - simplified for map features
+  try{
+    while(pos<buffer.byteLength){
+      const tag=readVarint();
+      const fieldNum=tag>>>3,wireType=tag&7;
+      if(fieldNum===3&&wireType===2){// layer
+        const layerEnd=pos+readVarint();
+        let layerName='',keys=[],values=[],layerExtent=4096;
+        const layerFeatures=[];
+        while(pos<layerEnd){
+          const ltag=readVarint();const lfn=ltag>>>3,lwt=ltag&7;
+          if(lfn===1&&lwt===2)layerName=readString();
+          else if(lfn===3&&lwt===2)keys.push(readString());
+          else if(lfn===4&&lwt===2){// value
+            const vEnd=pos+readVarint();
+            let val=null;
+            while(pos<vEnd){
+              const vtag=readVarint();const vfn=vtag>>>3;
+              if(vfn===1)val=readString();
+              else if(vfn===2){pos+=4;val=view.getFloat32(pos-4,true)}
+              else if(vfn===3){pos+=8;val=view.getFloat64(pos-8,true)}
+              else if(vfn===4||vfn===5)val=readVarint();
+              else if(vfn===6)val=readSVarint();
+              else if(vfn===7)val=!!readVarint();
+              else skipField(vtag&7);
+            }
+            values.push(val);
+          }
+          else if(lfn===2&&lwt===2){// feature
+            const fEnd=pos+readVarint();
+            let fid=0,geomType=0,geom=[],props={};
+            const propTags=[];
+            while(pos<fEnd){
+              const ftag=readVarint();const ffn=ftag>>>3,fwt=ftag&7;
+              if(ffn===1)fid=readVarint();
+              else if(ffn===2){const pBytes=readBytes();for(let i=0;i<pBytes.length;){let ki=0,vi=0,sh=0,b;do{b=pBytes[i++];ki|=(b&0x7f)<<sh;sh+=7}while(b>=0x80);sh=0;do{b=pBytes[i++];vi|=(b&0x7f)<<sh;sh+=7}while(b>=0x80);propTags.push([ki,vi])}}
+              else if(ffn===3)geomType=readVarint();
+              else if(ffn===4){const gBytes=readBytes();let cx=0,cy=0,gi=0;while(gi<gBytes.length){let cmd=0,sh=0,b;do{b=gBytes[gi++];cmd|=(b&0x7f)<<sh;sh+=7}while(b>=0x80);const cmdId=cmd&7,cmdCount=cmd>>>3;for(let c=0;c<cmdCount;c++){if(cmdId===1||cmdId===2){let dx=0,dy=0;sh=0;do{b=gBytes[gi++];dx|=(b&0x7f)<<sh;sh+=7}while(b>=0x80);dx=(dx>>>1)^-(dx&1);sh=0;do{b=gBytes[gi++];dy|=(b&0x7f)<<sh;sh+=7}while(b>=0x80);dy=(dy>>>1)^-(dy&1);cx+=dx;cy+=dy;geom.push({x:cx,y:cy})}}}}
+              else skipField(fwt);
+            }
+            propTags.forEach(([ki,vi])=>{if(keys[ki]&&values[vi]!==undefined)props[keys[ki]]=values[vi]});
+            layerFeatures.push({id:fid,type:geomType,geometry:geom,properties:props,extent:layerExtent});
+          }
+          else if(lfn===5)layerExtent=readVarint();
+          else skipField(lwt);
+        }
+        layerFeatures.forEach(f=>{f.layer=layerName;f.extent=layerExtent;features.push(f)});
+      }else skipField(wireType);
+    }
+  }catch(e){console.warn('MVT parse error:',e)}
+  return features;
+  }catch(e){console.warn('MVT decoder error:',e);return[];}
+}
+
+async function fetchMapillaryFeatures(){
+  setS('Loading street details...');
+  const z=14;// Good zoom level for street features
+  const features=[];
+
+  try{
+    const centerTile=latLonToTile(cLat,cLon,z);
+    // Fetch center tile and adjacent tiles for coverage
+    const tiles=[[0,0],[-1,0],[1,0],[0,-1],[0,1]];
+
+    // Add timeout to prevent blocking
+    const fetchWithTimeout=async(url,timeout=5000)=>{
+      const controller=new AbortController();
+      const id=setTimeout(()=>controller.abort(),timeout);
+      try{
+        const resp=await fetch(url,{signal:controller.signal});
+        clearTimeout(id);
+        return resp;
+      }catch(e){clearTimeout(id);throw e}
+    };
+
+    for(const[dx,dy]of tiles){
+      const tx=centerTile.x+dx,ty=centerTile.y+dy;
+      try{
+        // Fetch point features (fire hydrants, benches, poles, etc.)
+        const pointUrl=`https://tiles.mapillary.com/maps/vtp/mly_map_feature_point/2/${z}/${tx}/${ty}?access_token=${MAPILLARY_TOKEN}`;
+        const pointResp=await fetchWithTimeout(pointUrl);
+        if(pointResp.ok){
+          const buf=await pointResp.arrayBuffer();
+          if(buf.byteLength>0){
+            const parsed=decodeMVT(buf);
+            if(Array.isArray(parsed)){
+              parsed.forEach(f=>{
+                if(f&&f.geometry&&f.geometry.length>0){
+                  const pt=f.geometry[0];
+                  const{lat,lon}=tilePixelToLatLon(tx,ty,z,pt.x,pt.y,f.extent||4096);
+                  const world=ll(lat,lon);
+                  if(Math.abs(world.x)<RADIUS&&Math.abs(world.z)<RADIUS){
+                    features.push({type:f.properties?.value||f.properties?.object_value||'unknown',x:world.x,z:world.z,lat,lon});
+                  }
+                }
+              });
+            }
+          }
+        }
+
+        // Fetch traffic signs
+        const signUrl=`https://tiles.mapillary.com/maps/vtp/mly_map_feature_traffic_sign/2/${z}/${tx}/${ty}?access_token=${MAPILLARY_TOKEN}`;
+        const signResp=await fetchWithTimeout(signUrl);
+        if(signResp.ok){
+          const buf=await signResp.arrayBuffer();
+          if(buf.byteLength>0){
+            const parsed=decodeMVT(buf);
+            if(Array.isArray(parsed)){
+              parsed.forEach(f=>{
+                if(f&&f.geometry&&f.geometry.length>0){
+                  const pt=f.geometry[0];
+                  const{lat,lon}=tilePixelToLatLon(tx,ty,z,pt.x,pt.y,f.extent||4096);
+                  const world=ll(lat,lon);
+                  if(Math.abs(world.x)<RADIUS&&Math.abs(world.z)<RADIUS){
+                    features.push({type:'sign_'+(f.properties?.value||f.properties?.object_value||'unknown'),x:world.x,z:world.z,lat,lon,isSign:true});
+                  }
+                }
+              });
+            }
+          }
+        }
+      }catch(e){console.warn('Mapillary tile fetch error:',e)}
+    }
+  }catch(e){console.warn('Mapillary fetch failed:',e)}
+
+  console.log('Mapillary features found:',features.length);
+  return features;
+}
+
+// Create street furniture based on Mapillary feature type
+function createStreetFurniture(feature){
+  const{type,x,z}=feature;
+  const ty=getTerrainY(x,z);
+  const t=type.toLowerCase();
+
+  // Street light / utility pole
+  if(t.includes('pole')||t.includes('street_light')||t.includes('light')||t.includes('utility')){
+    const pole=new THREE.Mesh(new THREE.CylinderGeometry(.06,.08,6,6),new THREE.MeshLambertMaterial({color:0x444444}));
+    pole.position.set(x,ty+3,z);pole.castShadow=!isMobile;scene.add(pole);
+    const arm=new THREE.Mesh(new THREE.CylinderGeometry(.03,.03,1.5,4),new THREE.MeshLambertMaterial({color:0x444444}));
+    arm.rotation.z=Math.PI/2;arm.position.set(x+.6,ty+5.8,z);scene.add(arm);
+    const bulb=new THREE.Mesh(new THREE.SphereGeometry(.15,6,6),new THREE.MeshBasicMaterial({color:0xffffaa}));
+    bulb.position.set(x+1.2,ty+5.6,z);scene.add(bulb);
+    if(!isMobile){const light=new THREE.PointLight(0xffeecc,.4,18);light.position.set(x+1.2,ty+5.5,z);scene.add(light)}
+    return true;
+  }
+
+  // Fire hydrant
+  if(t.includes('hydrant')||t.includes('fire')){
+    const body=new THREE.Mesh(new THREE.CylinderGeometry(.12,.15,.6,8),new THREE.MeshLambertMaterial({color:0xcc2222}));
+    body.position.set(x,ty+.3,z);scene.add(body);
+    const top=new THREE.Mesh(new THREE.CylinderGeometry(.08,.12,.15,8),new THREE.MeshLambertMaterial({color:0xcc2222}));
+    top.position.set(x,ty+.67,z);scene.add(top);
+    const cap=new THREE.Mesh(new THREE.SphereGeometry(.1,6,6),new THREE.MeshLambertMaterial({color:0xcc2222}));
+    cap.position.set(x,ty+.8,z);scene.add(cap);
+    // Side outlets
+    const outMat=new THREE.MeshLambertMaterial({color:0xaa1111});
+    const out1=new THREE.Mesh(new THREE.CylinderGeometry(.04,.04,.15,6),outMat);
+    out1.rotation.z=Math.PI/2;out1.position.set(x+.15,ty+.4,z);scene.add(out1);
+    const out2=new THREE.Mesh(new THREE.CylinderGeometry(.04,.04,.15,6),outMat);
+    out2.rotation.z=Math.PI/2;out2.position.set(x-.15,ty+.4,z);scene.add(out2);
+    return true;
+  }
+
+  // Bench
+  if(t.includes('bench')){
+    const seat=new THREE.Mesh(new THREE.BoxGeometry(1.5,.08,.4),new THREE.MeshLambertMaterial({color:0x664422}));
+    seat.position.set(x,ty+.45,z);scene.add(seat);
+    const back=new THREE.Mesh(new THREE.BoxGeometry(1.5,.4,.06),new THREE.MeshLambertMaterial({color:0x664422}));
+    back.position.set(x,ty+.7,z-.18);scene.add(back);
+    const legMat=new THREE.MeshLambertMaterial({color:0x333333});
+    [[-.6,0],[.6,0]].forEach(([lx,lz])=>{
+      const leg=new THREE.Mesh(new THREE.BoxGeometry(.06,.45,.3),legMat);
+      leg.position.set(x+lx,ty+.22,z+lz);scene.add(leg);
+    });
+    return true;
+  }
+
+  // Trash can / waste basket
+  if(t.includes('waste')||t.includes('trash')||t.includes('bin')||t.includes('litter')){
+    const can=new THREE.Mesh(new THREE.CylinderGeometry(.25,.2,.7,8),new THREE.MeshLambertMaterial({color:0x2a4a2a}));
+    can.position.set(x,ty+.35,z);scene.add(can);
+    const rim=new THREE.Mesh(new THREE.TorusGeometry(.25,.03,6,12),new THREE.MeshLambertMaterial({color:0x333333}));
+    rim.rotation.x=Math.PI/2;rim.position.set(x,ty+.7,z);scene.add(rim);
+    return true;
+  }
+
+  // Bollard
+  if(t.includes('bollard')){
+    const boll=new THREE.Mesh(new THREE.CylinderGeometry(.08,.1,.8,8),new THREE.MeshLambertMaterial({color:0x555555}));
+    boll.position.set(x,ty+.4,z);scene.add(boll);
+    const top=new THREE.Mesh(new THREE.SphereGeometry(.1,6,6),new THREE.MeshLambertMaterial({color:0x666666}));
+    top.position.set(x,ty+.85,z);scene.add(top);
+    return true;
+  }
+
+  // Mailbox
+  if(t.includes('mail')||t.includes('post_box')){
+    const post=new THREE.Mesh(new THREE.CylinderGeometry(.05,.05,1,6),new THREE.MeshLambertMaterial({color:0x333333}));
+    post.position.set(x,ty+.5,z);scene.add(post);
+    const box=new THREE.Mesh(new THREE.BoxGeometry(.35,.4,.25),new THREE.MeshLambertMaterial({color:0x2244aa}));
+    box.position.set(x,ty+1.2,z);scene.add(box);
+    return true;
+  }
+
+  // Traffic sign
+  if(t.includes('sign_')||feature.isSign){
+    const signType=t.replace('sign_','');
+    const post=new THREE.Mesh(new THREE.CylinderGeometry(.04,.04,2.5,6),new THREE.MeshLambertMaterial({color:0x888888}));
+    post.position.set(x,ty+1.25,z);scene.add(post);
+    // Determine sign shape and color
+    let signGeo,signCol=0xffffff;
+    if(signType.includes('stop')){
+      signGeo=new THREE.CircleGeometry(.3,8);signCol=0xcc0000;
+    }else if(signType.includes('yield')){
+      signGeo=new THREE.CircleGeometry(.3,3);signCol=0xcc0000;
+    }else if(signType.includes('speed')||signType.includes('regulatory')){
+      signGeo=new THREE.CircleGeometry(.28,16);signCol=0xffffff;
+    }else{
+      signGeo=new THREE.PlaneGeometry(.5,.5);
+      signCol=signType.includes('warning')?0xffcc00:0x228822;
+    }
+    const sign=new THREE.Mesh(signGeo,new THREE.MeshLambertMaterial({color:signCol,side:THREE.DoubleSide}));
+    sign.position.set(x,ty+2.6,z);
+    sign.rotation.y=Math.random()*Math.PI*2;// Face random direction
+    scene.add(sign);
+    return true;
+  }
+
+  // Crosswalk markings (flat on ground)
+  if(t.includes('crosswalk')||t.includes('crossing')){
+    const markings=new THREE.Group();
+    for(let i=-2;i<=2;i++){
+      const stripe=new THREE.Mesh(new THREE.PlaneGeometry(.4,2.5),new THREE.MeshBasicMaterial({color:0xffffff,transparent:true,opacity:.9}));
+      stripe.rotation.x=-Math.PI/2;
+      stripe.position.set(i*.6,.02,0);
+      markings.add(stripe);
+    }
+    markings.position.set(x,ty,z);
+    markings.rotation.y=Math.random()*Math.PI;
+    scene.add(markings);
+    return true;
+  }
+
+  return false;// Unknown type
+}
+
 let loadStartTime=0;
 const setS=(m,e)=>{
   const el=document.getElementById('st');el.textContent=m;el.className=e?'err':'';
@@ -524,23 +816,75 @@ async function fetchElevation(){
   const centerElev=allElevs[centerIdx]||0;
   terrainMinElev=centerElev; // Store for chunk normalization
   let elevs=allElevs.map(e=>e-centerElev);
-  // Smooth elevation to reduce blockiness (simple box filter)
-  const smoothed=new Array(N*N);
-  for(let r=0;r<N;r++){
-    for(let c=0;c<N;c++){
-      let sum=0,cnt=0;
-      for(let dr=-1;dr<=1;dr++){
-        for(let dc=-1;dc<=1;dc++){
-          const nr=r+dr,nc=c+dc;
-          if(nr>=0&&nr<N&&nc>=0&&nc<N){sum+=elevs[nr*N+nc];cnt++}
-        }
-      }
-      smoothed[r*N+c]=sum/cnt;
-    }
+
+  // Check raw elevation spread
+  const rawMin=Math.min(...elevs),rawMax=Math.max(...elevs),rawSpread=rawMax-rawMin;
+  console.log('Raw elevation spread:',rawSpread.toFixed(1)+'m');
+
+  // If spread is extreme (>40m over 1km), compress it to make terrain playable
+  // This keeps hills visible but prevents cliffs
+  const maxSpread=40; // Max 40m of elevation change across the map
+  if(rawSpread>maxSpread){
+    const scale=maxSpread/rawSpread;
+    elevs=elevs.map(e=>e*scale);
+    console.log('Compressed elevation by',scale.toFixed(2)+'x');
   }
-  terrainElevs=smoothed;
+
+  // Heavy smoothing - 6 passes of Gaussian blur
+  const w=[[1,2,1],[2,4,2],[1,2,1]];
+  for(let pass=0;pass<6;pass++){
+    const smoothed=new Array(N*N);
+    for(let r=0;r<N;r++){
+      for(let c=0;c<N;c++){
+        let sum=0,wSum=0;
+        for(let dr=-1;dr<=1;dr++){
+          for(let dc=-1;dc<=1;dc++){
+            const nr=r+dr,nc=c+dc;
+            if(nr>=0&&nr<N&&nc>=0&&nc<N){
+              const weight=w[dr+1][dc+1];
+              sum+=elevs[nr*N+nc]*weight;
+              wSum+=weight;
+            }
+          }
+        }
+        smoothed[r*N+c]=sum/wSum;
+      }
+    }
+    elevs=smoothed;
+  }
+
+  // Slope limiting - max 3m change between adjacent cells (~27m apart = 11% grade)
+  const maxSlope=3;
+  for(let iter=0;iter<4;iter++){
+    const limited=elevs.slice();
+    for(let r=0;r<N;r++){
+      for(let c=0;c<N;c++){
+        const idx=r*N+c;
+        const e=elevs[idx];
+        // Average with slope-clamped neighbors
+        let sum=e,cnt=1;
+        const neighbors=[[r-1,c],[r+1,c],[r,c-1],[r,c+1]];
+        for(const[nr,nc]of neighbors){
+          if(nr>=0&&nr<N&&nc>=0&&nc<N){
+            const ne=elevs[nr*N+nc];
+            const diff=ne-e;
+            if(Math.abs(diff)>maxSlope){
+              sum+=e+(diff>0?maxSlope:-maxSlope);
+            }else{
+              sum+=ne;
+            }
+            cnt++;
+          }
+        }
+        limited[idx]=sum/cnt;
+      }
+    }
+    elevs=limited;
+  }
+
+  terrainElevs=elevs;
   // Save to cache
-  setCache(cacheKey,{centerElev,elevs:smoothed});
+  setCache(cacheKey,{centerElev,elevs});
   const minE=Math.min(...terrainElevs),maxE=Math.max(...terrainElevs);
   console.log('Elevation loaded:',N+'x'+N,'center='+centerElev.toFixed(1)+'m',
     'range='+minE.toFixed(1)+' to '+maxE.toFixed(1)+'m','spread='+(maxE-minE).toFixed(1)+'m');
@@ -1652,7 +1996,7 @@ function bldColor(tags){
 
 const ROOF_COLORS=[0x553322,0x664433,0x443322,0x332211,0x554433,0x3a2a1a,0x5a3a2a,0x2a2a2a,0x333333,0x444444];
 
-function buildWorld(osm){
+function buildWorld(osm,mapillaryData=[]){
   setS('Building world...');setP(70);
   const nodes={};osm.elements.forEach(el=>{if(el.type==='node')nodes[el.id]=el});
   const ways=osm.elements.filter(el=>el.type==='way'&&el.nodes);
@@ -1876,8 +2220,30 @@ function buildWorld(osm){
   });
   // Count barriers
   ways.forEach(w=>{if(w.tags&&(w.tags.barrier||w.tags.man_made==='fence'))fc++});
-  setS(bc+' buildings · '+rc+' roads · '+streetNames.size+' streets'+(fc?' · '+fc+' fences':'')+(tc?' · '+tc+' trees':''));
-  for(let i=0;i<(isMobile?10:20);i++)addLamp((Math.random()-.5)*RADIUS*1.5,(Math.random()-.5)*RADIUS*1.5);
+
+  // Place street furniture from Mapillary data
+  let mapillaryCount=0;
+  if(mapillaryData&&mapillaryData.length>0){
+    console.log('Placing',mapillaryData.length,'Mapillary features...');
+    const typeCount={};
+    mapillaryData.forEach(f=>{
+      if(createStreetFurniture(f)){
+        mapillaryCount++;
+        typeCount[f.type]=(typeCount[f.type]||0)+1;
+      }
+    });
+    console.log('Mapillary feature breakdown:',typeCount);
+  }
+
+  // Fallback: add some random lamps if Mapillary didn't provide enough light sources
+  const lightFeatures=mapillaryData.filter(f=>f.type&&(f.type.includes('pole')||f.type.includes('light'))).length;
+  if(lightFeatures<5){
+    const fallbackLamps=Math.max(0,(isMobile?8:15)-lightFeatures);
+    for(let i=0;i<fallbackLamps;i++)addLamp((Math.random()-.5)*RADIUS*1.5,(Math.random()-.5)*RADIUS*1.5);
+  }
+
+  const mapInfo=mapillaryCount>0?' · '+mapillaryCount+' street objects':'';
+  setS(bc+' buildings · '+rc+' roads · '+streetNames.size+' streets'+(fc?' · '+fc+' fences':'')+(tc?' · '+tc+' trees':'')+mapInfo);
 }
 
 function addTree(x,z){const s=isMobile?4:6;const ty=getTerrainY(x,z);const t=new THREE.Mesh(new THREE.CylinderGeometry(.2,.3,2,s),new THREE.MeshLambertMaterial({color:0x4a3520}));t.position.set(x,ty+1,z);scene.add(t);const c=new THREE.Mesh(new THREE.SphereGeometry(1.5+Math.random(),s,s),new THREE.MeshLambertMaterial({color:new THREE.Color().setHSL(.28+Math.random()*.08,.5,.2+Math.random()*.1)}));c.position.set(x,ty+3.5+Math.random(),z);scene.add(c)}
@@ -1938,9 +2304,9 @@ function setupDesktop(){
     if(e.code==='F3'){e.preventDefault();document.getElementById('debug-panel').classList.toggle('show');return}
     if(e.code==='Tab'){e.preventDefault();toggleEdit();return}
     if(e.code==='KeyE'||e.code==='KeyF'){if(activeVehicle)exitV();else{const v=findNearest();if(v)enterV(v)}return}
-    switch(e.code){case'KeyW':case'ArrowUp':mF=1;break;case'KeyS':case'ArrowDown':mB=1;break;case'KeyA':case'ArrowLeft':mL=1;break;case'KeyD':case'ArrowRight':mR=1;break;case'ShiftLeft':case'ShiftRight':sprinting=true;break;case'Space':e.preventDefault();if(!activeVehicle&&onGround){velY=JUMP;onGround=false}break}
+    switch(e.code){case'KeyW':case'ArrowUp':mF=1;break;case'KeyS':case'ArrowDown':mB=1;break;case'KeyA':case'ArrowLeft':mL=1;break;case'KeyD':case'ArrowRight':mR=1;break;case'ShiftLeft':case'ShiftRight':if(activeVehicle)carEBrake=1;else sprinting=true;break;case'Space':e.preventDefault();if(!activeVehicle&&onGround){velY=JUMP;onGround=false}break}
   });
-  document.addEventListener('keyup',e=>{switch(e.code){case'KeyW':case'ArrowUp':mF=0;break;case'KeyS':case'ArrowDown':mB=0;break;case'KeyA':case'ArrowLeft':mL=0;break;case'KeyD':case'ArrowRight':mR=0;break;case'ShiftLeft':case'ShiftRight':sprinting=false;break}});
+  document.addEventListener('keyup',e=>{switch(e.code){case'KeyW':case'ArrowUp':mF=0;break;case'KeyS':case'ArrowDown':mB=0;break;case'KeyA':case'ArrowLeft':mL=0;break;case'KeyD':case'ArrowRight':mR=0;break;case'ShiftLeft':case'ShiftRight':sprinting=false;carEBrake=0;break}});
   let md=false,lmx=0,lmy=0,dragDist=0,mouseX=window.innerWidth/2,mouseY=window.innerHeight/2;
   renderer.domElement.addEventListener('mousedown',e=>{
     md=true;lmx=e.clientX;lmy=e.clientY;dragDist=0;
@@ -2331,15 +2697,34 @@ function updateCompass(){const n=document.getElementById('compass-needle'),hd=do
 function gameLoop(){
   requestAnimationFrame(gameLoop);const dt=Math.min(clock.getDelta(),.1);let camTarget;
   if(activeVehicle){
-    const v=activeVehicle;let ac=0,br=0,st=0;
+    const v=activeVehicle;let ac=0,br=0,st=0,eb=carEBrake;
     if(mF)ac=1;if(mB)br=1;if(mL)st=1;if(mR)st=-1;
     if(carAccelInput)ac=1;if(carBrakeInput)br=1;
     if(Math.abs(joyVec.x)>.15)st=-joyVec.x;if(joyVec.y<-.2)ac=Math.min(1,-joyVec.y);if(joyVec.y>.2)br=Math.min(1,joyVec.y);
-    let spd=v.userData.speed;spd+=ac*CAR_ACCEL*dt;
-    if(br){if(spd>0)spd-=CAR_BRAKE*dt;else spd-=CAR_ACCEL*.4*dt}
-    if(!ac&&!br){if(spd>0)spd=Math.max(0,spd-CAR_FRICTION*dt);else if(spd<0)spd=Math.min(0,spd+CAR_FRICTION*dt)}
-    spd-=spd*CAR_DRAG*dt;spd=Math.max(-CAR_MAX*.3,Math.min(CAR_MAX,spd));
-    v.userData.angle+=st*CAR_STEER*dt*Math.min(1,Math.abs(spd)/5)*(spd>=0?1:-1);
+    let spd=v.userData.speed;
+    // E-brake drift: lock rear wheels, reduce grip, allow oversteer
+    if(eb&&Math.abs(spd)>3){
+      // Decelerate but not as hard as normal brake
+      spd*=1-(dt*1.5);
+      // Allow much faster steering (drift!)
+      const driftSteer=st*CAR_STEER*2.5*dt*(spd>=0?1:-1);
+      v.userData.angle+=driftSteer;
+      // Slide sideways based on speed and steering input
+      const slideAngle=v.userData.angle+Math.PI/2;
+      const slideForce=st*Math.abs(spd)*0.15*dt;
+      const slideX=Math.sin(slideAngle)*slideForce;
+      const slideZ=Math.cos(slideAngle)*slideForce;
+      if(!ptInBuilding(v.position.x+slideX,v.position.z+slideZ)){
+        v.position.x+=slideX;v.position.z+=slideZ;
+      }
+    }else{
+      spd+=ac*CAR_ACCEL*dt;
+      if(br){if(spd>0)spd-=CAR_BRAKE*dt;else spd-=CAR_ACCEL*.4*dt}
+      if(!ac&&!br){if(spd>0)spd=Math.max(0,spd-CAR_FRICTION*dt);else if(spd<0)spd=Math.min(0,spd+CAR_FRICTION*dt)}
+      spd-=spd*CAR_DRAG*dt;
+      v.userData.angle+=st*CAR_STEER*dt*Math.min(1,Math.abs(spd)/5)*(spd>=0?1:-1);
+    }
+    spd=Math.max(-CAR_MAX*.3,Math.min(CAR_MAX,spd));
     const nx=v.position.x+Math.sin(v.userData.angle)*spd*dt,nz=v.position.z+Math.cos(v.userData.angle)*spd*dt;
     if(!ptInBuilding(nx,nz)){v.position.x=nx;v.position.z=nz}else spd*=-.3;
     v.userData.speed=spd;v.rotation.y=v.userData.angle;
@@ -2457,8 +2842,26 @@ async function startGame(){
       const fg=scene.getObjectByName('flatGround');if(fg)scene.remove(fg);
       buildTerrain();
     }
-    const osm=await fetchOSM();buildWorld(osm);
+    const osm=await fetchOSM();
+    // Fetch Mapillary street furniture (fire hydrants, benches, signs, etc.)
+    let mapillaryData=[];
+    try{mapillaryData=await fetchMapillaryFeatures()}catch(e){console.warn('Mapillary fetch failed:',e)}
+    buildWorld(osm,mapillaryData);
     setS('Spawning vehicles...');setP(90);spawnVehicles();
+    // Auto-load most recent edits for this location if not already loaded
+    if(!userEdits.length){
+      try{
+        const saved=JSON.parse(localStorage.getItem(getStorageKey())||'[]');
+        if(saved.length){
+          // Get most recent save (last in array since saveLocal appends)
+          const latest=saved[saved.length-1];
+          if(latest.edits&&latest.edits.length){
+            userEdits=latest.edits.slice();
+            console.log('Auto-loaded',userEdits.length,'edits from save by',latest.author||'Anon');
+          }
+        }
+      }catch(e){console.warn('Failed to auto-load edits:',e)}
+    }
     if(userEdits.length){setS('Applying edits...');applyUserEdits()}
     // Snap spawn to nearest road so player doesn't start in a building
     snapSpawnToRoad();
