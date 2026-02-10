@@ -1062,17 +1062,21 @@ function getChunkTerrainY(chunk,wx,wz){
   return top+(bot-top)*fr;
 }
 function buildChunkTerrain(chunk){
+  // DISABLED: Chunk terrain causes elevation mismatches (raised plateaus)
+  // Main terrain covers ~1100m x 1100m which is enough for most gameplay
+  // Buildings/roads in chunks still follow terrain via getTerrainY
+  return;
+  /* TODO: Fix chunk elevation alignment before re-enabling
   if(!chunk.elevs)return;
-  // Skip chunks that overlap with main terrain to avoid z-fighting
   if(terrainMesh){
     const mainHalf=terrainSize/2;
     const chunkWorld=chunkToWorld(chunk.cx,chunk.cz);
     const chunkHalf=CHUNK_SIZE/2;
-    // Overlap exists if chunk is within (mainHalf + chunkHalf) of center in BOTH axes
     const overlapX=Math.abs(chunkWorld.x)<=mainHalf+chunkHalf;
     const overlapZ=Math.abs(chunkWorld.z)<=mainHalf+chunkHalf;
     if(overlapX&&overlapZ)return;
   }
+  */
   const N=chunk.elevGridN,sz=chunk.elevSize;
   const ox=chunk.elevOrigin.x,oz=chunk.elevOrigin.z;
   const geo=new THREE.PlaneGeometry(sz,sz,N-1,N-1);
