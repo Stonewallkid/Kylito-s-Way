@@ -119,7 +119,7 @@
 
 ## Known Bugs
 
-- [ ] Terrain elevation sometimes inconsistent between chunks
+- [x] Terrain elevation sometimes inconsistent between chunks (fixed by disabling chunk terrain)
 - [ ] Fences not showing in areas with sparse OSM barrier data
 - [ ] Mobile paint mode touch conflicts with joystick in edge cases
 - [ ] Camera rotation in paintball mode not obvious to users
@@ -165,6 +165,7 @@
 - Added object pooling for paintballs and splats
 - Added basic LOD - skip window/roof details for distant buildings
 - Added debug panel (F3) - shows FPS, chunks, terrain info, position, velocity, draw calls
+- Fixed chunk terrain causing raised plateaus (disabled chunk terrain meshes)
 
 ---
 
