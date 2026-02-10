@@ -39,6 +39,12 @@ button,input,select,textarea{font-family:inherit}
 .vi .vd{color:rgba(255,255,255,.25);font-size:.5rem}
 
 #hud{position:fixed;inset:0;pointer-events:none;z-index:50;display:none}
+#debug-panel{position:fixed;bottom:10px;left:10px;background:rgba(0,0,0,.85);border:1px solid rgba(0,255,170,.3);border-radius:6px;padding:8px 12px;font-family:'Share Tech Mono',monospace;font-size:.55rem;color:rgba(0,255,170,.8);display:none;z-index:100;min-width:180px;line-height:1.5}
+#debug-panel.show{display:block}
+#debug-panel .debug-title{font-family:'Orbitron',sans-serif;font-size:.45rem;color:rgba(255,170,0,.7);margin-bottom:4px;letter-spacing:.05em}
+#debug-panel .debug-row{display:flex;justify-content:space-between;gap:10px}
+#debug-panel .debug-label{color:rgba(255,255,255,.4)}
+#debug-panel .debug-val{color:rgba(0,255,170,.9)}
 .hl{position:absolute;top:max(6px,env(safe-area-inset-top,6px));left:50%;transform:translateX(-50%);font-family:'Orbitron',sans-serif;font-weight:700;font-size:.5rem;letter-spacing:.1em;color:rgba(0,255,170,.6);text-align:center;text-transform:uppercase;text-shadow:0 0 10px rgba(0,0,0,.8);max-width:70%}
 .hc{font-size:.4rem;color:rgba(255,255,255,.2);margin-top:1px}
 #cur-addr{color:rgba(0,200,255,.5);font-size:.42rem}
@@ -174,6 +180,17 @@ button,input,select,textarea{font-family:inherit}
 </div>
 </div>
 
+<div id="debug-panel">
+  <div class="debug-title">DEBUG (F3)</div>
+  <div class="debug-row"><span class="debug-label">FPS:</span><span class="debug-val" id="dbg-fps">--</span></div>
+  <div class="debug-row"><span class="debug-label">Chunks:</span><span class="debug-val" id="dbg-chunks">--</span></div>
+  <div class="debug-row"><span class="debug-label">Terrain:</span><span class="debug-val" id="dbg-terrain">--</span></div>
+  <div class="debug-row"><span class="debug-label">Elev range:</span><span class="debug-val" id="dbg-elev">--</span></div>
+  <div class="debug-row"><span class="debug-label">Position:</span><span class="debug-val" id="dbg-pos">--</span></div>
+  <div class="debug-row"><span class="debug-label">Velocity:</span><span class="debug-val" id="dbg-vel">--</span></div>
+  <div class="debug-row"><span class="debug-label">Draw calls:</span><span class="debug-val" id="dbg-draw">--</span></div>
+</div>
+
 <div id="edit-bar">
   <div class="eb on" data-tool="select" onclick="setTool('select')">✋ Select</div>
   <div class="eb" data-tool="house" onclick="setTool('house')">🏠 House</div>
@@ -248,6 +265,7 @@ const CHUNK_SIZE=300,CHUNK_LOAD_DIST=1.5,CHUNK_UNLOAD_DIST=2.5,CHUNK_ELEV_GRID=1
 const chunks=new Map(); // key="x_z", value={group,buildings,roads,elevs,terrainMesh,loading,loaded}
 let chunkUpdateTimer=0,lastChunkX=0,lastChunkZ=0;
 let playerVelX=0,playerVelZ=0,lastPosX=0,lastPosZ=0; // For predictive chunk loading
+let debugMode=false,fpsFrames=0,fpsTime=0,fpsValue=0; // Debug panel
 // Camera auto-follow behind character
 let camYawTarget=0,camAutoFollow=true;
 // Terrain elevation
@@ -1815,6 +1833,7 @@ function setupDesktop(){
     if(e.code==='Escape'){if(mmExpanded)toggleMinimap();if(selectedEdit||selectedVehicle)deselectEdit();return}
     if(e.code==='KeyM'){toggleMinimap();return}
     if(e.code==='KeyP'){togglePaintball();return}
+    if(e.code==='F3'){e.preventDefault();document.getElementById('debug-panel').classList.toggle('show');return}
     if(e.code==='Tab'){e.preventDefault();toggleEdit();return}
     if(e.code==='KeyE'||e.code==='KeyF'){if(activeVehicle)exitV();else{const v=findNearest();if(v)enterV(v)}return}
     switch(e.code){case'KeyW':case'ArrowUp':mF=1;break;case'KeyS':case'ArrowDown':mB=1;break;case'KeyA':case'ArrowLeft':mL=1;break;case'KeyD':case'ArrowRight':mR=1;break;case'ShiftLeft':case'ShiftRight':sprinting=true;break;case'Space':e.preventDefault();if(!activeVehicle&&onGround){velY=JUMP;onGround=false}break}
@@ -2302,7 +2321,24 @@ function gameLoop(){
   // Chunk streaming - check every 0.5 seconds
   chunkUpdateTimer+=dt;
   if(chunkUpdateTimer>0.5){chunkUpdateTimer=0;updateChunks()}
-  updateMinimap();updateCompass();renderer.render(scene,camera);
+  updateMinimap();updateCompass();
+  // Debug panel update
+  fpsFrames++;fpsTime+=dt;
+  if(fpsTime>=0.5){fpsValue=Math.round(fpsFrames/fpsTime);fpsFrames=0;fpsTime=0}
+  const dbg=document.getElementById('debug-panel');
+  if(dbg.classList.contains('show')){
+    document.getElementById('dbg-fps').textContent=fpsValue;
+    document.getElementById('dbg-chunks').textContent=chunks.size+' loaded';
+    document.getElementById('dbg-terrain').textContent=terrainMesh?'OK ('+terrainGridN+'x'+terrainGridN+')':'NONE';
+    document.getElementById('dbg-elev').textContent=terrainElevs?Math.min(...terrainElevs).toFixed(1)+' to '+Math.max(...terrainElevs).toFixed(1)+'m':'N/A';
+    const t=activeVehicle||player;
+    if(t){
+      document.getElementById('dbg-pos').textContent=t.position.x.toFixed(0)+', '+t.position.y.toFixed(1)+', '+t.position.z.toFixed(0);
+      document.getElementById('dbg-vel').textContent=Math.sqrt(playerVelX*playerVelX+playerVelZ*playerVelZ).toFixed(1)+' m/s';
+    }
+    document.getElementById('dbg-draw').textContent=renderer.info.render.calls;
+  }
+  renderer.render(scene,camera);
 }
 
 // ═══ START ═══

@@ -164,6 +164,7 @@
 - Fixed duplicate variable declaration bug (game wouldn't start)
 - Added object pooling for paintballs and splats
 - Added basic LOD - skip window/roof details for distant buildings
+- Added debug panel (F3) - shows FPS, chunks, terrain info, position, velocity, draw calls
 
 ---
 

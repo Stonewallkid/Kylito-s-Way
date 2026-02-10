@@ -36,6 +36,7 @@ Just open `index.html` in a browser. No build step, no server required.
 | TAB | Toggle edit mode |
 | M | Toggle minimap |
 | P | Toggle paintball mode |
+| F3 | Toggle debug panel |
 
 ## Tech Stack
 
