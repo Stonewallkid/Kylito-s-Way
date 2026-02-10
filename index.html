@@ -247,6 +247,7 @@ let previewMesh=null,previewActive=false;
 const CHUNK_SIZE=300,CHUNK_LOAD_DIST=1.5,CHUNK_UNLOAD_DIST=2.5,CHUNK_ELEV_GRID=11;
 const chunks=new Map(); // key="x_z", value={group,buildings,roads,elevs,terrainMesh,loading,loaded}
 let chunkUpdateTimer=0,lastChunkX=0,lastChunkZ=0;
+let playerVelX=0,playerVelZ=0,lastPosX=0,lastPosZ=0; // For predictive chunk loading
 // Camera auto-follow behind character
 let camYawTarget=0,camAutoFollow=true;
 // Terrain elevation
@@ -1216,16 +1217,47 @@ function unloadChunk(key){
   chunks.delete(key);
 }
 function updateChunks(){
-  const px=player?player.position.x:0,pz=player?player.position.z:0;
+  const tgt=activeVehicle||player;
+  const px=tgt?tgt.position.x:0,pz=tgt?tgt.position.z:0;
   const pc=getChunkCoord(px,pz);
 
-  // Load nearby chunks
+  // Load nearby chunks (3x3 around player)
   for(let dx=-1;dx<=1;dx++){
     for(let dz=-1;dz<=1;dz++){
       const cx=pc.x+dx,cz=pc.z+dz;
       const key=getChunkKey(cx,cz);
       if(!chunks.has(key)){
         loadChunk(cx,cz);
+      }
+    }
+  }
+
+  // Predictive loading: load chunks ahead based on velocity
+  const speed=Math.sqrt(playerVelX*playerVelX+playerVelZ*playerVelZ);
+  if(speed>2){ // Only predict if moving at decent speed (2 m/s)
+    // Normalize velocity direction
+    const dirX=playerVelX/speed,dirZ=playerVelZ/speed;
+    // Load 2-4 chunks ahead depending on speed
+    const lookAhead=Math.min(4,Math.floor(speed/10)+2);
+    for(let dist=2;dist<=lookAhead;dist++){
+      // Predict position in ~1 second * dist
+      const futureX=px+dirX*CHUNK_SIZE*dist*0.5;
+      const futureZ=pz+dirZ*CHUNK_SIZE*dist*0.5;
+      const fc=getChunkCoord(futureX,futureZ);
+      const key=getChunkKey(fc.x,fc.z);
+      if(!chunks.has(key)){
+        loadChunk(fc.x,fc.z);
+      }
+      // Also load adjacent chunks to the predicted path
+      if(dist<=2){
+        const perpX=-dirZ,perpZ=dirX; // Perpendicular direction
+        for(const side of[-1,1]){
+          const sideX=futureX+perpX*CHUNK_SIZE*0.5*side;
+          const sideZ=futureZ+perpZ*CHUNK_SIZE*0.5*side;
+          const sc=getChunkCoord(sideX,sideZ);
+          const skey=getChunkKey(sc.x,sc.z);
+          if(!chunks.has(skey))loadChunk(sc.x,sc.z);
+        }
       }
     }
   }
@@ -2231,6 +2263,14 @@ function gameLoop(){
   if(selHighlight)selHighlight.material.opacity=.3+.3*Math.sin(Date.now()*.005);
   // Paintball physics
   if(paintMode)updatePaintballs(dt);
+  // Track velocity for predictive chunk loading
+  const tgt=activeVehicle||player;
+  if(tgt){
+    const vx=(tgt.position.x-lastPosX)/dt,vz=(tgt.position.z-lastPosZ)/dt;
+    playerVelX=playerVelX*.8+vx*.2; // Smooth velocity
+    playerVelZ=playerVelZ*.8+vz*.2;
+    lastPosX=tgt.position.x;lastPosZ=tgt.position.z;
+  }
   // Chunk streaming - check every 0.5 seconds
   chunkUpdateTimer+=dt;
   if(chunkUpdateTimer>0.5){chunkUpdateTimer=0;updateChunks()}
