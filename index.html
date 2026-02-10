@@ -1198,7 +1198,7 @@ function buildChunk(chunk,osm,center){
     }
 
     if(tags.highway&&tags.highway!=='footway'&&tags.highway!=='path'&&tags.highway!=='steps'){
-      const w=tags.highway==='primary'?10:tags.highway==='secondary'?8:tags.highway==='tertiary'?7:tags.highway==='residential'?6:5;
+      const w=tags.highway==='primary'?14:tags.highway==='secondary'?10:tags.highway==='tertiary'?10:tags.highway==='residential'?8:6;
       for(let i=0;i<coords.length-1;i++){
         const p1=coords[i],p2=coords[i+1];
         const mx=(p1.x+p2.x)/2,mz=(p1.z+p2.z)/2;
@@ -1650,12 +1650,12 @@ function buildWorld(osm){
       }catch(e){}
     }
     else if(tags.highway){
-      let w=4,col=0x2a2a35;
-      if(['motorway','trunk','primary'].includes(tags.highway)){w=10;col=0x33333f}
-      else if(['secondary','tertiary'].includes(tags.highway)){w=7;col=0x2e2e38}
-      else if(['residential','living_street'].includes(tags.highway))w=5;
-      else if(['footway','path','cycleway'].includes(tags.highway)){w=1.5;col=0x3a3a28}
-      else if(tags.highway==='service')w=3;
+      let w=6,col=0x2a2a35;
+      if(['motorway','trunk','primary'].includes(tags.highway)){w=14;col=0x33333f}
+      else if(['secondary','tertiary'].includes(tags.highway)){w=10;col=0x2e2e38}
+      else if(['residential','living_street'].includes(tags.highway))w=8;
+      else if(['footway','path','cycleway'].includes(tags.highway)){w=2;col=0x3a3a28}
+      else if(tags.highway==='service')w=5;
       for(let i=0;i<coords.length-1;i++){
         const p1=coords[i],p2=coords[i+1],dx=p2.x-p1.x,dz=p2.z-p1.z,len=Math.sqrt(dx*dx+dz*dz);
         if(len<.5)continue;
