@@ -282,6 +282,46 @@ const ballPool=[],splatPool=[];
 const BALL_POOL_SIZE=50,SPLAT_POOL_SIZE=350;
 const PAINT_SPEED=120,PAINT_GRAV=-6,PAINT_COLORS=['#ff3366','#33ff66','#3366ff','#ffff33','#ff66ff','#ff8800','#00ffff','#ffffff'];
 const CAR_COLORS=[0xf0f0f0,0xe8e8e8,0x1a1a1a,0x111111,0x888888,0x999999,0x666666,0x771111,0xbb2222,0x112266,0x1144aa,0x114411,0x665522,0xaa8844,0xddddcc];
+// ═══ CACHING SYSTEM ═══
+const CACHE_VERSION=1,CACHE_EXPIRY=7*24*60*60*1000; // 7 days
+function getCacheKey(type,lat,lon){return`kw_${type}_${lat.toFixed(4)}_${lon.toFixed(4)}_v${CACHE_VERSION}`}
+function getCache(key){
+  try{
+    const raw=localStorage.getItem(key);
+    if(!raw)return null;
+    const data=JSON.parse(raw);
+    if(Date.now()-data.ts>CACHE_EXPIRY){localStorage.removeItem(key);return null}
+    console.log('Cache hit:',key);
+    return data.payload;
+  }catch(e){return null}
+}
+function setCache(key,payload){
+  try{
+    const data={ts:Date.now(),payload};
+    localStorage.setItem(key,JSON.stringify(data));
+    // If storage is getting full, clear old caches
+    if(navigator.storage?.estimate)navigator.storage.estimate().then(e=>{
+      if(e.usage>e.quota*0.8)clearOldCaches();
+    });
+  }catch(e){
+    // Storage full - clear old caches and retry
+    console.warn('Cache storage full, clearing old entries');
+    clearOldCaches();
+    try{localStorage.setItem(key,JSON.stringify({ts:Date.now(),payload}))}catch(e2){}
+  }
+}
+function clearOldCaches(){
+  const keys=[];
+  for(let i=0;i<localStorage.length;i++){
+    const k=localStorage.key(i);
+    if(k?.startsWith('kw_elev_')||k?.startsWith('kw_osm_'))keys.push(k);
+  }
+  // Sort by timestamp, remove oldest half
+  const items=keys.map(k=>{try{return{k,ts:JSON.parse(localStorage.getItem(k)).ts}}catch(e){return{k,ts:0}}});
+  items.sort((a,b)=>a.ts-b.ts);
+  items.slice(0,Math.ceil(items.length/2)).forEach(i=>localStorage.removeItem(i.k));
+  console.log('Cleared',Math.ceil(items.length/2),'old cache entries');
+}
 let loadStartTime=0;
 const setS=(m,e)=>{
   const el=document.getElementById('st');el.textContent=m;el.className=e?'err':'';
@@ -441,8 +481,18 @@ async function fetchElevation(){
   const N=41; // 41x41 grid = 1681 points for smoother terrain
   const half=RADIUS*1.1;
   terrainSize=half*2;terrainGridN=N;
+
+  // Check cache first
+  const cacheKey=getCacheKey('elev',cLat,cLon);
+  const cached=getCache(cacheKey);
+  if(cached){
+    terrainMinElev=cached.centerElev;
+    terrainElevs=cached.elevs;
+    console.log('Elevation from cache:',N+'x'+N);
+    return true;
+  }
+
   const cosLat=Math.cos(cLat*Math.PI/180);
-  
   // Build grid: row 0=south(z=+half), row N-1=north(z=-half)
   // col 0=west(x=-half), col N-1=east(x=+half)
   const lats=[],lons=[];
@@ -489,6 +539,8 @@ async function fetchElevation(){
     }
   }
   terrainElevs=smoothed;
+  // Save to cache
+  setCache(cacheKey,{centerElev,elevs:smoothed});
   const minE=Math.min(...terrainElevs),maxE=Math.max(...terrainElevs);
   console.log('Elevation loaded:',N+'x'+N,'center='+centerElev.toFixed(1)+'m',
     'range='+minE.toFixed(1)+' to '+maxE.toFixed(1)+'m','spread='+(maxE-minE).toFixed(1)+'m');
@@ -1548,11 +1600,21 @@ function animChar(dt,spd){
 // ═══ WORLD BUILDING ═══
 async function fetchOSM(){
   setS('Downloading map...');setP(10);
+
+  // Check cache first
+  const cacheKey=getCacheKey('osm',cLat,cLon);
+  const cached=getCache(cacheKey);
+  if(cached){
+    setP(60);
+    console.log('OSM from cache');
+    return cached;
+  }
+
   const deg=RADIUS/111320,bb=cLat-deg+','+(cLon-deg)+','+(cLat+deg)+','+(cLon+deg);
   // Also fetch landuse=residential for grass yards
   const q='[out:json][timeout:45];(way["building"]('+bb+');way["highway"]('+bb+');way["natural"="water"]('+bb+');way["leisure"="park"]('+bb+');way["landuse"]('+bb+');way["barrier"]('+bb+');way["natural"="tree_row"]('+bb+');node["natural"="tree"]('+bb+');way["man_made"="fence"]('+bb+'););out body;>;out skel qt;';
   const urls=['https://overpass-api.de/api/interpreter','https://overpass.kumi.systems/api/interpreter'];
-  for(const u of urls){try{const r=await cfetch(u,{method:'POST',body:'data='+encodeURIComponent(q)});setP(40);const d=await r.json();setP(60);return d}catch(e){continue}}
+  for(const u of urls){try{const r=await cfetch(u,{method:'POST',body:'data='+encodeURIComponent(q)});setP(40);const d=await r.json();setP(60);setCache(cacheKey,d);return d}catch(e){continue}}
   throw new Error('Map download failed');
 }
 
