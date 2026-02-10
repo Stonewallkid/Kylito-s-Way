@@ -430,8 +430,9 @@ async function fetchElevation(){
   const centerIdx=Math.floor(N/2)*N+Math.floor(N/2);
   const centerElev=allElevs[centerIdx]||0;
   terrainElevs=allElevs.map(e=>e-centerElev);
+  const minE=Math.min(...terrainElevs),maxE=Math.max(...terrainElevs);
   console.log('Elevation loaded:',N+'x'+N,'center='+centerElev.toFixed(1)+'m',
-    'range='+(Math.min(...terrainElevs)).toFixed(1)+' to '+(Math.max(...terrainElevs)).toFixed(1)+'m');
+    'range='+minE.toFixed(1)+' to '+maxE.toFixed(1)+'m','spread='+(maxE-minE).toFixed(1)+'m');
   return true;
 }
 
@@ -478,10 +479,14 @@ function buildTerrain(){
   geo.rotateX(-Math.PI/2);
   const pos=geo.attributes.position;
   // Set each vertex Y using its actual world x,z position
+  let minY=Infinity,maxY=-Infinity;
   for(let i=0;i<pos.count;i++){
     const wx=pos.getX(i),wz=pos.getZ(i);
-    pos.setY(i,getTerrainY(wx,wz));
+    const y=getTerrainY(wx,wz);
+    pos.setY(i,y);
+    if(y<minY)minY=y;if(y>maxY)maxY=y;
   }
+  console.log('Terrain mesh built: vertices='+pos.count+' Y range='+minY.toFixed(1)+' to '+maxY.toFixed(1));
   pos.needsUpdate=true;
   geo.computeVertexNormals();
   // Color vertices by height for natural look
@@ -1035,6 +1040,16 @@ function getChunkTerrainY(chunk,wx,wz){
 }
 function buildChunkTerrain(chunk){
   if(!chunk.elevs)return;
+  // Skip chunks that overlap with main terrain to avoid z-fighting
+  if(terrainMesh){
+    const mainHalf=terrainSize/2;
+    const chunkWorld=chunkToWorld(chunk.cx,chunk.cz);
+    const chunkHalf=CHUNK_SIZE/2;
+    // Overlap exists if chunk is within (mainHalf + chunkHalf) of center in BOTH axes
+    const overlapX=Math.abs(chunkWorld.x)<=mainHalf+chunkHalf;
+    const overlapZ=Math.abs(chunkWorld.z)<=mainHalf+chunkHalf;
+    if(overlapX&&overlapZ)return;
+  }
   const N=chunk.elevGridN,sz=chunk.elevSize;
   const ox=chunk.elevOrigin.x,oz=chunk.elevOrigin.z;
   const geo=new THREE.PlaneGeometry(sz,sz,N-1,N-1);
