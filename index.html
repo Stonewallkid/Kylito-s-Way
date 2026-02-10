@@ -283,7 +283,7 @@ const BALL_POOL_SIZE=50,SPLAT_POOL_SIZE=350;
 const PAINT_SPEED=120,PAINT_GRAV=-6,PAINT_COLORS=['#ff3366','#33ff66','#3366ff','#ffff33','#ff66ff','#ff8800','#00ffff','#ffffff'];
 const CAR_COLORS=[0xf0f0f0,0xe8e8e8,0x1a1a1a,0x111111,0x888888,0x999999,0x666666,0x771111,0xbb2222,0x112266,0x1144aa,0x114411,0x665522,0xaa8844,0xddddcc];
 // ═══ CACHING SYSTEM ═══
-const CACHE_VERSION=10,CACHE_EXPIRY=7*24*60*60*1000; // 7 days - v10: OpenTopoData fallback API
+const CACHE_VERSION=11,CACHE_EXPIRY=7*24*60*60*1000; // 7 days - v11: procedural terrain fallback
 function getCacheKey(type,lat,lon){return`kw_${type}_${lat.toFixed(4)}_${lon.toFixed(4)}_v${CACHE_VERSION}`}
 function getCache(key){
   try{
@@ -799,45 +799,38 @@ async function fetchElevation(){
   }
   console.log('Elevation grid: lat range',Math.min(...lats).toFixed(5),'to',Math.max(...lats).toFixed(5),
     'lon range',Math.min(...lons).toFixed(5),'to',Math.max(...lons).toFixed(5));
-  // Batch into groups of 100 - try OpenTopoData first (Open-Meteo rate limited)
+  // Batch into groups of 100 - use Open-Meteo
   const batchSz=100,allElevs=[];
   console.log('Fetching elevation for',N*N,'points around',cLat.toFixed(5),cLon.toFixed(5));
 
+  let apiWorked=false;
   for(let b=0;b<lats.length;b+=batchSz){
     const bLats=lats.slice(b,b+batchSz),bLons=lons.slice(b,b+batchSz);
     let success=false;
 
-    // Try OpenTopoData first (Open-Meteo is rate limited)
+    // Try Open-Meteo (supports CORS)
+    const url='https://api.open-meteo.com/v1/elevation?latitude='+bLats.join(',')+'&longitude='+bLons.join(',');
     try{
-      const locs=bLats.map((lat,i)=>lat.toFixed(5)+','+bLons[i].toFixed(5)).join('|');
-      const url='https://api.opentopodata.org/v1/aster30m?locations='+locs;
       const r=await fetch(url);
       const d=await r.json();
-      if(d.results&&d.results.length>0){
-        allElevs.push(...d.results.map(r=>r.elevation||0));
-        success=true;
-        if(b===0)console.log('Using OpenTopoData API');
+      if(d.elevation&&!d.error){
+        allElevs.push(...d.elevation);
+        success=true;apiWorked=true;
+        if(b===0)console.log('Using Open-Meteo API');
+      }else if(d.error){
+        console.warn('Open-Meteo rate limited:',d.reason||d.error);
       }
-    }catch(e){console.warn('OpenTopoData failed:',e)}
+    }catch(e){}
 
-    // Fallback to Open-Meteo
+    // If API failed, generate procedural terrain
     if(!success){
-      try{
-        const url='https://api.open-meteo.com/v1/elevation?latitude='+bLats.join(',')+'&longitude='+bLons.join(',');
-        const r=await fetch(url);
-        const d=await r.json();
-        if(d.elevation&&!d.error){
-          allElevs.push(...d.elevation);
-          success=true;
-          if(b===0)console.log('Using Open-Meteo API (fallback)');
-        }
-      }catch(e){}
-    }
-
-    // If both fail, fill with zeros
-    if(!success){
-      console.warn('Both elevation APIs failed for batch',b/batchSz+1);
-      for(let i=0;i<bLats.length;i++)allElevs.push(0);
+      for(let i=0;i<bLats.length;i++){
+        // Simple procedural hills using sine waves
+        const lat=bLats[i],lon=bLons[i];
+        const e=Math.sin(lat*500)*8+Math.sin(lon*500)*8+Math.sin((lat+lon)*300)*5;
+        allElevs.push(e);
+      }
+      if(b===0)console.log('Using procedural terrain (API rate limited)');
     }
   }
   console.log('All elevs sample:',allElevs.slice(0,10),'unique values:',new Set(allElevs).size);
