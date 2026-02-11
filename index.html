@@ -2816,57 +2816,93 @@ function gameLoop(){
     if(carAccelInput)ac=1;if(carBrakeInput)br=1;
     if(Math.abs(joyVec.x)>.15)st=-joyVec.x;if(joyVec.y<-.2)ac=Math.min(1,-joyVec.y);if(joyVec.y>.2)br=Math.min(1,joyVec.y);
 
-    // AIRPLANE PHYSICS
+    // AIRPLANE PHYSICS - realistic flight model
     if(v.userData.isAircraft){
-      const THRUST=12,LIFT_FACTOR=0.02,DRAG=0.25,GRAVITY=12,MIN_LIFT_SPEED=10;
-      let spd=v.userData.speed||5; // Start with some speed
-      let pitchInput=0;if(mF)pitchInput=-1;if(mB)pitchInput=1; // W=pitch down, S=pitch up
-      // Throttle always on (weak engine)
+      const THRUST=6;        // Weak engine - can barely maintain level flight
+      const DRAG=0.02;       // Air resistance
+      const GRAVITY=20;      // Pulls plane down
+      const PITCH_RATE=1.2;  // How fast plane pitches
+      const TURN_RATE=1.0;   // How fast plane turns
+
+      let spd=v.userData.speed||8;
+      let pitch=v.userData.pitch||0;  // Nose angle: negative=up, positive=down
+      let angle=v.userData.angle!==undefined?v.userData.angle:v.rotation.y;
+
+      // REVERSED CONTROLS like real airplane yoke:
+      // W (forward) = push stick = pitch DOWN (nose down)
+      // S (back) = pull stick = pitch UP (nose up)
+      let pitchInput=0;
+      if(mF)pitchInput=1;   // W = pitch down (positive pitch = nose down)
+      if(mB)pitchInput=-1;  // S = pitch up (negative pitch = nose up)
+
+      // Apply pitch input
+      pitch+=pitchInput*PITCH_RATE*dt;
+      pitch=Math.max(-0.6,Math.min(0.6,pitch)); // Limit pitch angle
+
+      // Turning (yaw) - A/D
+      angle+=st*TURN_RATE*dt;
+      const roll=-st*0.4; // Bank when turning
+
+      // PHYSICS: plane flies in direction it's pointing
+      // Thrust pushes forward along plane's axis
       spd+=THRUST*dt;
-      // Drag
-      spd-=spd*DRAG*dt;
-      // Pitch affects vertical speed
-      v.userData.pitch=(v.userData.pitch||0)+pitchInput*1.5*dt;
-      v.userData.pitch=Math.max(-0.8,Math.min(0.8,v.userData.pitch));
-      // Slowly return to level
-      v.userData.pitch*=0.98;
-      // Turning
-      v.userData.angle=(v.userData.angle||v.rotation.y)+st*1.5*dt;
-      v.userData.roll=(v.userData.roll||0)+(-st*0.5-v.userData.roll)*0.1;
-      // Calculate lift (speed squared, only works above min speed)
-      const lift=spd>MIN_LIFT_SPEED?(spd-MIN_LIFT_SPEED)**2*LIFT_FACTOR:0;
-      // Vertical velocity: lift - gravity + pitch contribution
-      const climbRate=lift-GRAVITY*dt+(-v.userData.pitch*spd*0.5);
-      // Diving increases speed, climbing decreases it (energy conservation)
-      if(v.userData.pitch>0.1)spd+=v.userData.pitch*8*dt; // Diving = gain speed
-      if(v.userData.pitch<-0.1)spd+=v.userData.pitch*5*dt; // Climbing = lose speed
-      spd=Math.max(5,Math.min(50,spd)); // Clamp speed
-      // Move airplane
-      const nx=v.position.x+Math.sin(v.userData.angle)*spd*dt;
-      const nz=v.position.z+Math.cos(v.userData.angle)*spd*dt;
+
+      // Drag slows plane (more drag at higher speeds)
+      spd-=spd*spd*DRAG*dt;
+
+      // Gravity effect depends on pitch:
+      // - Nose down (positive pitch): gravity ADDS speed (diving)
+      // - Nose up (negative pitch): gravity REMOVES speed (climbing)
+      spd+=Math.sin(pitch)*GRAVITY*dt;
+
+      // Clamp speed
+      spd=Math.max(3,Math.min(60,spd));
+
+      // Move plane in 3D along its facing direction
+      // Horizontal movement
+      const horizSpeed=Math.cos(pitch)*spd;
+      const nx=v.position.x+Math.sin(angle)*horizSpeed*dt;
+      const nz=v.position.z+Math.cos(angle)*horizSpeed*dt;
+
+      // Vertical movement - plane flies where it points
+      // Negative pitch (nose up) = climb, positive pitch (nose down) = descend
+      const vertSpeed=-Math.sin(pitch)*spd;
       const groundY=getTerrainY(nx,nz);
-      let ny=v.position.y+climbRate*dt;
+      let ny=v.position.y+vertSpeed*dt;
+
       // Track if we've actually taken off
       if(v.position.y>groundY+5)v.userData.wasAirborne=true;
-      // Can't go below ground
+
+      // Ground collision
       if(ny<groundY+0.8){
         ny=groundY+0.8;
-        // Only trigger landing if we actually flew first
         if(v.userData.wasAirborne){
-          if(spd>20){spd*=0.5;setS('Rough landing!');v.userData.wasAirborne=false}
-          else{v.userData.speed=0;v.userData.wasAirborne=false;exitV();setS('Landed!');setTimeout(()=>setS(''),2000)}
+          if(spd>18||pitch>0.2){
+            spd*=0.5;pitch=0;
+            setS('Crash landing!');v.userData.wasAirborne=false;
+          }else{
+            v.userData.speed=0;v.userData.wasAirborne=false;
+            exitV();setS('Landed!');setTimeout(()=>setS(''),2000);
+          }
         }
+        // On ground - can still taxi
+        pitch=Math.max(0,pitch); // Can't pitch up through ground
       }
+
+      // Update state
       v.position.set(nx,ny,nz);
       v.userData.speed=spd;
-      v.rotation.y=v.userData.angle;
-      v.rotation.x=v.userData.pitch;
-      v.rotation.z=v.userData.roll;
-      // Spin propeller
-      if(v.userData.propeller)v.userData.propeller.rotation.z+=spd*0.5;
-      // Update speedometer to show airspeed
+      v.userData.pitch=pitch;
+      v.userData.angle=angle;
+      v.rotation.set(pitch,angle,roll);
+
+      // Spin propeller based on speed
+      if(v.userData.propeller)v.userData.propeller.rotation.z+=spd*0.3;
+
+      // Speedometer shows airspeed in mph
       document.getElementById('spd-val').textContent=Math.abs(spd*2.237).toFixed(0);
-      camTarget=v.position.clone().add(new THREE.Vector3(0,2,0));yaw=v.userData.angle+Math.PI;
+      camTarget=v.position.clone().add(new THREE.Vector3(0,2,0));
+      yaw=angle+Math.PI;
     }else{
     // GROUND VEHICLE PHYSICS
     let spd=v.userData.speed;
