@@ -283,7 +283,7 @@ const BALL_POOL_SIZE=50,SPLAT_POOL_SIZE=350;
 const PAINT_SPEED=120,PAINT_GRAV=-6,PAINT_COLORS=['#ff3366','#33ff66','#3366ff','#ffff33','#ff66ff','#ff8800','#00ffff','#ffffff'];
 const CAR_COLORS=[0xf0f0f0,0xe8e8e8,0x1a1a1a,0x111111,0x888888,0x999999,0x666666,0x771111,0xbb2222,0x112266,0x1144aa,0x114411,0x665522,0xaa8844,0xddddcc];
 // ═══ CACHING SYSTEM ═══
-const CACHE_VERSION=13,CACHE_EXPIRY=7*24*60*60*1000; // 7 days - v13: bigger procedural hills
+const CACHE_VERSION=14,CACHE_EXPIRY=7*24*60*60*1000; // 7 days - v14: buildings extend to ground, gentler hills
 function getCacheKey(type,lat,lon){return`kw_${type}_${lat.toFixed(4)}_${lon.toFixed(4)}_v${CACHE_VERSION}`}
 function getCache(key){
   try{
@@ -822,18 +822,18 @@ async function fetchElevation(){
       }
     }catch(e){}
 
-    // If API failed, generate dramatic procedural terrain
+    // If API failed, generate gentle procedural terrain
     if(!success){
       for(let i=0;i<bLats.length;i++){
         const idx=b+i;
         const row=Math.floor(idx/N),col=idx%N;
-        // BIG hills - 50m total variation
-        const x=col/(N-1)*Math.PI*3;
-        const z=row/(N-1)*Math.PI*3;
-        const e=Math.sin(x)*20+Math.sin(z)*20+Math.sin(x*2+z)*15+Math.cos(x-z*1.5)*10;
-        allElevs.push(300+e); // Base elevation 300m + hills
+        // Gentle rolling hills - 20m total variation
+        const x=col/(N-1)*Math.PI*2;
+        const z=row/(N-1)*Math.PI*2;
+        const e=Math.sin(x)*8+Math.sin(z)*8+Math.sin(x*1.7+z*1.3)*5;
+        allElevs.push(300+e); // Base elevation 300m + gentle hills
       }
-      if(b===0)console.log('Using procedural terrain (API rate limited) - 50m hills');
+      if(b===0)console.log('Using procedural terrain (API rate limited) - gentle hills');
     }
   }
   console.log('All elevs sample:',allElevs.slice(0,10),'unique values:',new Set(allElevs).size);
@@ -2012,13 +2012,21 @@ function buildWorld(osm,mapillaryData=[]){
       try{
         const cx=coords.reduce((s,c)=>s+c.x,0)/coords.length;
         const cz=coords.reduce((s,c)=>s+c.z,0)/coords.length;
-        const ty=getTerrainY(cx,cz);
+        // Sample terrain at all corners to find lowest point
+        let minY=Infinity,maxY=-Infinity;
+        for(const c of coords){
+          const y=getTerrainY(c.x,c.z);
+          if(y<minY)minY=y;
+          if(y>maxY)maxY=y;
+        }
+        const ty=minY; // Place building at lowest corner
+        const extraH=maxY-minY; // Extend height to cover slope
         // Compute bounding size for roof
         let mnX=1e9,mxX=-1e9,mnZ=1e9,mxZ=-1e9;
         coords.forEach(c=>{mnX=Math.min(mnX,c.x);mxX=Math.max(mxX,c.x);mnZ=Math.min(mnZ,c.z);mxZ=Math.max(mxZ,c.z)});
         const bw=mxX-mnX,bd=mxZ-mnZ;
 
-        const geo=new THREE.ExtrudeGeometry(shape,{depth:h,bevelEnabled:false});geo.rotateX(-Math.PI/2);
+        const geo=new THREE.ExtrudeGeometry(shape,{depth:h+extraH,bevelEnabled:false});geo.rotateX(-Math.PI/2);
         const col=bldColor(tags);
         const mesh=new THREE.Mesh(geo,new THREE.MeshLambertMaterial({color:col}));
         mesh.position.y=ty;
@@ -2026,11 +2034,12 @@ function buildWorld(osm,mapillaryData=[]){
         bData.push({coords,height:h,baseY:ty});
 
         if(isRes&&h<12){
-          // HOUSE: Add peaked roof
+          // HOUSE: Add peaked roof (at top of extended building)
+          const totalH=h+extraH;
           const roofH=h*.4+1;
           const roofGeo=new THREE.ConeGeometry(Math.max(bw,bd)*.65+1,roofH,4);
           const roofMesh=new THREE.Mesh(roofGeo,new THREE.MeshLambertMaterial({color:ROOF_COLORS[Math.floor(Math.random()*ROOF_COLORS.length)]}));
-          roofMesh.position.set(cx,ty+h+roofH/2,cz);roofMesh.rotation.y=Math.PI/4;roofMesh.castShadow=!isMobile;scene.add(roofMesh);
+          roofMesh.position.set(cx,ty+totalH+roofH/2,cz);roofMesh.rotation.y=Math.PI/4;roofMesh.castShadow=!isMobile;scene.add(roofMesh);
         }else{
           // COMMERCIAL/TALL: Windows grid + flat roof detail
           // LOD: Skip windows for distant buildings (>200m from center)
