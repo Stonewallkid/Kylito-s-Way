@@ -3502,29 +3502,35 @@ function gameLoop(){
         velY=0; // Reset vertical velocity!
         onGround=true; // Mark as on ground!
         const wasChute=ws.parachute;
+        const landingYaw=ws.glideAngle||yaw; // Save before clearing!
         ws.wingsuit=false;
         ws.parachute=false;
         ws.glideSpeed=undefined;
         ws.glidePitch=undefined;
         ws.glideAngle=undefined;
-        player.rotation.order='XYZ'; // Reset rotation order
-        player.rotation.set(0,yaw,0);
+        // Fully reset player orientation
+        player.rotation.order='XYZ';
+        player.quaternion.identity(); // Clear quaternion!
+        player.rotation.set(0,landingYaw,0);
+        yaw=landingYaw+Math.PI; // Set camera behind player
         document.getElementById('altimeter').style.display='none';
         if(wingsuitMesh)wingsuitMesh.visible=false;
         if(parachuteMesh)parachuteMesh.visible=false;
         setS(wasChute?'Landed safely!':'Rough landing!');
         setTimeout(()=>setS(''),2000);
+        // Skip rest of flight code this frame
+        camTarget=player.position.clone().add(new THREE.Vector3(0,1.5,0));
+      }else{
+        // Still flying - camera behind player
+        camTarget=player.position.clone().add(new THREE.Vector3(0,3,0));
+        yaw=ws.glideAngle+Math.PI;
+        pitch=0.2;
+
+        // Show altimeter
+        const altEl=document.getElementById('altimeter');
+        altEl.style.display='block';
+        document.getElementById('alt-val').textContent=Math.round(player.position.y);
       }
-
-      // Camera behind player
-      camTarget=player.position.clone().add(new THREE.Vector3(0,3,0));
-      yaw=ws.glideAngle+Math.PI;
-      pitch=0.2;
-
-      // Show altimeter
-      const altEl=document.getElementById('altimeter');
-      altEl.style.display='block';
-      document.getElementById('alt-val').textContent=Math.round(player.position.y);
     }else{
       // Hide flight gear when walking/jetpacking
       if(wingsuitMesh)wingsuitMesh.visible=false;
