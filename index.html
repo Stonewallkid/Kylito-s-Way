@@ -1946,47 +1946,43 @@ function animChar(dt,spd){
 // ═══ WINGSUIT & PARACHUTE MESHES ═══
 let wingsuitMesh=null,parachuteMesh=null;
 function createWingsuitMesh(){
-  if(wingsuitMesh)return;
+  if(wingsuitMesh||!player)return;
   const g=new THREE.Group();
   const wingMat=new THREE.MeshLambertMaterial({color:0x222266,side:THREE.DoubleSide});
-  // Left wing membrane (arm to body to leg)
-  const leftWing=new THREE.Mesh(new THREE.PlaneGeometry(1.5,1.2),wingMat);
-  leftWing.position.set(-0.9,0.9,0);
-  leftWing.rotation.set(0,0,0.3);
+  // Wing membranes attached to arms
+  const leftWing=new THREE.Mesh(new THREE.PlaneGeometry(1.2,0.8),wingMat);
+  leftWing.position.set(-0.6,1.0,0);
+  leftWing.rotation.z=0.3;
   g.add(leftWing);
-  // Right wing membrane
-  const rightWing=new THREE.Mesh(new THREE.PlaneGeometry(1.5,1.2),wingMat);
-  rightWing.position.set(0.9,0.9,0);
-  rightWing.rotation.set(0,0,-0.3);
+  const rightWing=new THREE.Mesh(new THREE.PlaneGeometry(1.2,0.8),wingMat);
+  rightWing.position.set(0.6,1.0,0);
+  rightWing.rotation.z=-0.3;
   g.add(rightWing);
-  // Tail flap between legs
-  const tailFlap=new THREE.Mesh(new THREE.PlaneGeometry(0.6,0.8),wingMat);
-  tailFlap.position.set(0,0.3,0);
+  // Leg flap
+  const tailFlap=new THREE.Mesh(new THREE.PlaneGeometry(0.5,0.6),wingMat);
+  tailFlap.position.set(0,0.4,0);
   g.add(tailFlap);
   g.visible=false;
-  scene.add(g);
+  player.add(g); // Attach to player!
   wingsuitMesh=g;
 }
 function createParachuteMesh(){
-  if(parachuteMesh)return;
+  if(parachuteMesh||!player)return;
   const g=new THREE.Group();
-  // Canopy - half sphere dome
   const canopyMat=new THREE.MeshLambertMaterial({color:0xff6600,side:THREE.DoubleSide,transparent:true,opacity:0.8});
-  const canopy=new THREE.Mesh(new THREE.SphereGeometry(3,12,8,0,Math.PI*2,0,Math.PI/2),canopyMat);
-  canopy.position.y=6;
+  const canopy=new THREE.Mesh(new THREE.SphereGeometry(2.5,10,6,0,Math.PI*2,0,Math.PI/2),canopyMat);
+  canopy.position.y=5;
   canopy.rotation.x=Math.PI;
   g.add(canopy);
   // Suspension lines
   const lineMat=new THREE.LineBasicMaterial({color:0x333333});
-  for(let i=0;i<8;i++){
-    const angle=i*Math.PI/4;
-    const pts=[new THREE.Vector3(Math.sin(angle)*2.5,6,Math.cos(angle)*2.5),new THREE.Vector3(0,1.5,0)];
-    const lineGeo=new THREE.BufferGeometry().setFromPoints(pts);
-    const line=new THREE.Line(lineGeo,lineMat);
-    g.add(line);
+  for(let i=0;i<6;i++){
+    const angle=i*Math.PI/3;
+    const pts=[new THREE.Vector3(Math.sin(angle)*2,5,Math.cos(angle)*2),new THREE.Vector3(0,1.8,0)];
+    g.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts),lineMat));
   }
   g.visible=false;
-  scene.add(g);
+  player.add(g); // Attach to player!
   parachuteMesh=g;
 }
 
@@ -2710,7 +2706,7 @@ function setupDesktop(){
     if(e.code==='F3'){e.preventDefault();document.getElementById('debug-panel').classList.toggle('show');return}
     if(e.code==='Tab'){e.preventDefault();toggleEdit();return}
     if(e.code==='KeyE'||e.code==='KeyF'){if(activeVehicle)exitV();else{const v=findNearest();if(v)enterV(v)}return}
-    switch(e.code){case'KeyW':case'ArrowUp':mF=1;break;case'KeyS':case'ArrowDown':mB=1;break;case'KeyA':case'ArrowLeft':mL=1;break;case'KeyD':case'ArrowRight':mR=1;break;case'ShiftLeft':case'ShiftRight':if(activeVehicle)carEBrake=1;else sprinting=true;break;case'Space':e.preventDefault();if(activeVehicle&&activeVehicle.userData.isAircraft){dropPaintBomb()}else if(player&&player.userData.wingsuit&&!player.userData.parachute){player.userData.parachute=true;setS('Parachute deployed!')}else if(!activeVehicle&&onGround){velY=JUMP;onGround=false}break}
+    switch(e.code){case'KeyW':case'ArrowUp':mF=1;break;case'KeyS':case'ArrowDown':mB=1;break;case'KeyA':case'ArrowLeft':mL=1;break;case'KeyD':case'ArrowRight':mR=1;break;case'ShiftLeft':case'ShiftRight':if(activeVehicle)carEBrake=1;else sprinting=true;break;case'Space':e.preventDefault();if(activeVehicle&&activeVehicle.userData.isAircraft){dropPaintBomb()}else if(player&&player.userData.wingsuit){player.userData.parachute=!player.userData.parachute;setS(player.userData.parachute?'Parachute!':'Wingsuit!')}else if(player&&player.userData.parachute){player.userData.parachute=false;player.userData.wingsuit=true;setS('Wingsuit!')}else if(!activeVehicle&&onGround){velY=JUMP;onGround=false}break}
   });
   document.addEventListener('keyup',e=>{switch(e.code){case'KeyW':case'ArrowUp':mF=0;break;case'KeyS':case'ArrowDown':mB=0;break;case'KeyA':case'ArrowLeft':mL=0;break;case'KeyD':case'ArrowRight':mR=0;break;case'ShiftLeft':case'ShiftRight':sprinting=false;carEBrake=0;break}});
   let md=false,lmx=0,lmy=0,dragDist=0,mouseX=window.innerWidth/2,mouseY=window.innerHeight/2;
@@ -3265,97 +3261,85 @@ function gameLoop(){
     camTarget=v.position.clone().add(new THREE.Vector3(0,1.5,0));yaw=v.userData.angle+Math.PI;
     } // end ground vehicle else
   }else if(player){
-    // WINGSUIT / PARACHUTE MODE
+    // WINGSUIT / PARACHUTE MODE - flies like a glider
     if(player.userData.wingsuit||player.userData.parachute){
       const ws=player.userData;
-      // Initialize pitch if not set
-      if(ws.wsPitch===undefined)ws.wsPitch=0;
+      // Initialize glide state
+      if(ws.glideSpeed===undefined)ws.glideSpeed=20;
+      if(ws.glidePitch===undefined)ws.glidePitch=0;
+      if(ws.glideAngle===undefined)ws.glideAngle=yaw;
 
-      // Steering - A/D or joystick
-      if(mL)yaw+=2*dt;if(mR)yaw-=2*dt;
-      if(Math.abs(joyVec.x)>0.15)yaw-=joyVec.x*2*dt;
+      // A/D = turn (yaw)
+      if(mL)ws.glideAngle+=1.5*dt;
+      if(mR)ws.glideAngle-=1.5*dt;
+      if(Math.abs(joyVec.x)>0.15)ws.glideAngle-=joyVec.x*1.5*dt;
 
       if(ws.parachute){
-        // PARACHUTE: Slow descent, gentle steering
-        const fwdSpeed=5;
-        const fallSpeed=-3;
-        ws.wsVelX=Math.sin(yaw)*fwdSpeed;
-        ws.wsVelZ=Math.cos(yaw)*fwdSpeed;
-        ws.wsVelY+=(fallSpeed-ws.wsVelY)*0.1;
-        player.rotation.x=0;
-        player.rotation.z=0;
-        // Show parachute, hide wingsuit
+        // PARACHUTE: Slow gentle descent, smooth steering
+        const targetSpeed=8;
+        const fallRate=-4;
+        ws.glideSpeed+=(targetSpeed-ws.glideSpeed)*0.05;
+        ws.glidePitch=0;
+
+        // Move smoothly
+        player.position.x+=Math.sin(ws.glideAngle)*ws.glideSpeed*dt;
+        player.position.z+=Math.cos(ws.glideAngle)*ws.glideSpeed*dt;
+        player.position.y+=fallRate*dt;
+
+        // Player upright under chute
+        player.rotation.set(0,ws.glideAngle,0);
+
+        // Show parachute, hide wingsuit (attached to player, no position copy)
         if(wingsuitMesh)wingsuitMesh.visible=false;
-        if(parachuteMesh){
-          parachuteMesh.visible=true;
-          parachuteMesh.position.copy(player.position);
-          parachuteMesh.rotation.y=yaw;
-        }
+        if(parachuteMesh)parachuteMesh.visible=true;
       }else{
-        // WINGSUIT: Full gliding with pitch control!
-        // W = pitch down (dive, go faster)
-        // S = pitch up (flare, slow down, less descent)
-        if(mF||joyVec.y<-0.2)ws.wsPitch+=1.5*dt;  // Pitch down = dive
-        if(mB||joyVec.y>0.2)ws.wsPitch-=1.5*dt;   // Pitch up = flare
-        ws.wsPitch=Math.max(-0.3,Math.min(0.5,ws.wsPitch)); // Limit pitch
+        // WINGSUIT: Glide like airplane! W/S = pitch
+        if(mF||joyVec.y<-0.2)ws.glidePitch+=1.2*dt;  // W = pitch down (dive)
+        if(mB||joyVec.y>0.2)ws.glidePitch-=1.2*dt;   // S = pitch up (flare)
+        ws.glidePitch=Math.max(-0.4,Math.min(0.5,ws.glidePitch));
 
-        // Speed based on pitch: diving = fast, flaring = slow
-        const baseSpeed=20;
-        const pitchBoost=ws.wsPitch*30; // Diving adds speed
-        const totalSpeed=baseSpeed+pitchBoost;
+        // Speed from pitch: diving = fast, level/flaring = slower
+        const targetSpeed=25+ws.glidePitch*25;
+        ws.glideSpeed+=(targetSpeed-ws.glideSpeed)*0.08;
 
-        // Fall rate based on pitch: diving = steep, flaring = shallow
-        const baseFall=-8;
-        const pitchEffect=ws.wsPitch*-15; // Diving steepens descent
-        const flareLift=ws.wsPitch<0?ws.wsPitch*10:0; // Flaring reduces fall
-        const fallSpeed=baseFall+pitchEffect+flareLift;
+        // Vertical speed from pitch
+        const vertSpeed=-Math.sin(ws.glidePitch)*ws.glideSpeed-3; // Always some descent
 
-        ws.wsVelX=Math.sin(yaw)*totalSpeed;
-        ws.wsVelZ=Math.cos(yaw)*totalSpeed;
-        ws.wsVelY+=(fallSpeed-ws.wsVelY)*0.15;
+        // Move in 3D like airplane
+        const horizSpeed=Math.cos(ws.glidePitch)*ws.glideSpeed;
+        player.position.x+=Math.sin(ws.glideAngle)*horizSpeed*dt;
+        player.position.z+=Math.cos(ws.glideAngle)*horizSpeed*dt;
+        player.position.y+=vertSpeed*dt;
 
-        // Player lies flat in wingsuit, arms and legs spread
-        player.rotation.x=-Math.PI/2+ws.wsPitch; // Flat + pitch adjustment
-        player.rotation.z=0;
+        // Player faces flight direction, pitched appropriately
+        player.rotation.set(-ws.glidePitch-0.3,ws.glideAngle,0);
 
-        // Show wingsuit mesh, hide parachute
+        // Show wingsuit, hide parachute (attached to player)
         if(parachuteMesh)parachuteMesh.visible=false;
-        if(wingsuitMesh){
-          wingsuitMesh.visible=true;
-          wingsuitMesh.position.copy(player.position);
-          wingsuitMesh.rotation.set(player.rotation.x,yaw,0);
-        }
+        if(wingsuitMesh)wingsuitMesh.visible=true;
       }
 
-      // Apply movement
-      player.position.x+=ws.wsVelX*dt;
-      player.position.z+=ws.wsVelZ*dt;
-      player.position.y+=ws.wsVelY*dt;
-      player.rotation.y=yaw;
-
-      // Ground check (land on roofs too)
+      // Ground check
       const groundY=getSurfaceY(player.position.x,player.position.z)+.15;
       if(player.position.y<=groundY){
         player.position.y=groundY;
         const wasChute=ws.parachute;
         ws.wingsuit=false;
         ws.parachute=false;
-        ws.wsPitch=0;
-        player.rotation.x=0;
+        ws.glideSpeed=undefined;
+        ws.glidePitch=undefined;
+        ws.glideAngle=undefined;
+        player.rotation.set(0,yaw,0);
         if(wingsuitMesh)wingsuitMesh.visible=false;
         if(parachuteMesh)parachuteMesh.visible=false;
-        if(wasChute){
-          setS('Landed safely!');
-        }else{
-          // Wingsuit landing without chute - rough but survivable if slow
-          setS('Rough landing!');
-        }
+        setS(wasChute?'Landed safely!':'Rough landing!');
         setTimeout(()=>setS(''),2000);
       }
-      camTarget=player.position.clone().add(new THREE.Vector3(0,2,0));
-      // Camera follows behind flight direction
-      yaw=player.rotation.y+Math.PI;
-      pitch=0.3; // Look slightly down at player
+
+      // Camera behind player
+      camTarget=player.position.clone().add(new THREE.Vector3(0,3,0));
+      yaw=ws.glideAngle+Math.PI;
+      pitch=0.2;
     }else{
       // Hide flight gear when walking
       if(wingsuitMesh)wingsuitMesh.visible=false;
