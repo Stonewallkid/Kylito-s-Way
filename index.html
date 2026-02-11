@@ -2282,7 +2282,39 @@ const CUSTOM_BUILDINGS=[
     height:10,           // ~3 stories
     roofColor:0x333333,  // Dark charcoal
     roofType:'peaked',   // Triangular gable
-    name:'Tin Roof'
+    name:'Tin Roof',
+    sign:{text:'TIN ROOF',color:0x4444aa,y:8} // Blue sign
+  },
+  {
+    // HALO (420 W Dickson St area)
+    address:'420 W Dickson',
+    lat:36.066438,lon:-94.1650403,
+    color:0xd4c8a8,      // Tan/beige painted brick
+    height:8,            // 2 stories
+    roofType:'flat',
+    name:'HALO',
+    sign:{text:'HALO',color:0x2255aa,y:6,vertical:true} // Blue vertical sign
+  },
+  {
+    // Buster Belly's (next to HALO)
+    address:'418 W Dickson',
+    lat:36.066438,lon:-94.1648,
+    color:0xf0e8dc,      // Cream/white painted brick
+    height:8,            // 2 stories
+    roofType:'flat',
+    name:"Buster Belly's",
+    sign:{text:'BUSTER BELLYS',color:0xcc2222,y:5} // Red awning/sign
+  },
+  {
+    // Tusk & Trotter (red brick building on right)
+    address:'416 W Dickson',
+    lat:36.066438,lon:-94.1645,
+    color:0x8b3a3a,      // Red/maroon brick
+    height:9,            // 2 stories with peaked section
+    roofColor:0x554433,
+    roofType:'peaked',
+    name:'Tusk & Trotter',
+    sign:{text:'T&T',color:0x228844,y:6,circular:true} // Circular green logo
   }
 ];
 
@@ -2379,9 +2411,29 @@ function buildWorld(osm,mapillaryData=[]){
         const geo=new THREE.ExtrudeGeometry(shape,{depth:h+extraH,bevelEnabled:false});geo.rotateX(-Math.PI/2);
         const col=customBld?new THREE.Color(customBld.color):bldColor(tags);
         const mesh=new THREE.Mesh(geo,new THREE.MeshLambertMaterial({color:col}));
-        mesh.position.y=ty;
+        mesh.position.y=ty+0.05; // Slight offset to prevent z-fighting with terrain
         mesh.castShadow=!isMobile;mesh.receiveShadow=!isMobile;scene.add(mesh);
         bData.push({coords,height:h,baseY:ty});
+
+        // Add sign for custom buildings
+        if(customBld&&customBld.sign){
+          const s=customBld.sign;
+          const signW=s.vertical?0.8:Math.min(bw*0.6,4);
+          const signH=s.vertical?2.5:1.2;
+          const signD=0.3;
+          const signGeo=s.circular?
+            new THREE.CylinderGeometry(1,1,0.3,16):
+            new THREE.BoxGeometry(signW,signH,signD);
+          const signMat=new THREE.MeshLambertMaterial({color:s.color||0xffffff});
+          const signMesh=new THREE.Mesh(signGeo,signMat);
+          const signY=ty+(s.y||h-1);
+          if(s.circular)signMesh.rotation.z=Math.PI/2;
+          if(s.vertical)signMesh.rotation.z=0;
+          // Position sign on front of building
+          const frontAngle=Math.atan2(coords[1].z-coords[0].z,coords[1].x-coords[0].x);
+          signMesh.position.set(cx+Math.cos(frontAngle)*bw*0.3,signY,cz+Math.sin(frontAngle)*bd*0.3);
+          scene.add(signMesh);
+        }
 
         // Custom building with peaked roof
         if(customBld&&customBld.roofType==='peaked'){
