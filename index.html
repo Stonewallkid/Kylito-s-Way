@@ -2057,9 +2057,10 @@ const NPC_COUNT=15; // Number of NPCs to spawn
 
 function createNPC(){
   const g=new THREE.Group();
-  const skinTones=[0xd4a574,0xc68642,0x8d5524,0xffdbac,0xe0ac69];
-  const shirtColors=[0x2288dd,0xdd4422,0x22aa44,0xaa44aa,0xffaa00,0x4488ff,0xff6699,0x44dddd];
-  const pantsColors=[0x334455,0x222233,0x443322,0x224433,0x553322];
+  // NPC colors - deliberately different from player (player: skin 0xd4a574, shirt 0x2288dd, pants 0x334455)
+  const skinTones=[0xc68642,0x8d5524,0xffdbac,0xe0ac69,0xf5cba7];
+  const shirtColors=[0xdd4422,0x22aa44,0xaa44aa,0xffaa00,0xff6699,0x44dddd,0x88cc33,0xcc6688];
+  const pantsColors=[0x222233,0x443322,0x224433,0x553322,0x444466];
 
   const skin=skinTones[Math.floor(Math.random()*skinTones.length)];
   const shirt=shirtColors[Math.floor(Math.random()*shirtColors.length)];
@@ -3260,75 +3261,75 @@ function gameLoop(){
     if(carAccelInput)ac=1;if(carBrakeInput)br=1;
     if(Math.abs(joyVec.x)>.15)st=-joyVec.x;if(joyVec.y<-.2)ac=Math.min(1,-joyVec.y);if(joyVec.y>.2)br=Math.min(1,joyVec.y);
 
-    // AIRPLANE PHYSICS - realistic flight model with stall
+    // AIRPLANE PHYSICS - simple and intuitive
+    // Nose up = climbing, nose down = diving
+    // Top speed ~80 mph (36 m/s), only achievable in sustained dive
     if(v.userData.isAircraft){
-      const THRUST=10;       // Moderate engine
-      const DRAG=0.005;      // Low drag = preserve speed
-      const GRAVITY=25;      // Strong gravity effect (big speed changes from pitch)
-      const PITCH_RATE=2.0;  // How fast plane pitches
-      const TURN_RATE=1.2;   // How fast plane turns
-      const STALL_SPEED=8;   // Below this speed, plane stalls
+      const MAX_SPEED=36;    // 80 mph in m/s
+      const CRUISE_SPEED=15; // Level flight speed
+      const THRUST=8;        // Engine power
+      const DRAG=0.012;      // Air resistance
+      const PITCH_RATE=1.5;  // How fast plane pitches
+      const TURN_RATE=1.0;   // How fast plane turns
+      const STALL_SPEED=6;   // Below this, plane falls
 
-      let spd=v.userData.speed||10;
-      let pitch=v.userData.pitch||0;  // Nose angle: negative=up, positive=down
+      let spd=v.userData.speed||CRUISE_SPEED;
+      let pitch=v.userData.pitch||0;  // Positive = nose UP, negative = nose DOWN
       let angle=v.userData.angle!==undefined?v.userData.angle:v.rotation.y;
       let stallTimer=v.userData.stallTimer||0;
 
-      // REVERSED CONTROLS like real airplane yoke:
-      // W (forward) = push stick = pitch DOWN (nose down)
-      // S (back) = pull stick = pitch UP (nose up)
+      // SIMPLE CONTROLS:
+      // W = pitch UP (climb)
+      // S = pitch DOWN (dive)
       let pitchInput=0;
-      if(mF)pitchInput=1;   // W = pitch down (positive pitch = nose down)
-      if(mB)pitchInput=-1;  // S = pitch up (negative pitch = nose up)
+      if(mF)pitchInput=1;   // W = nose up
+      if(mB)pitchInput=-1;  // S = nose down
 
       // Apply pitch input
       pitch+=pitchInput*PITCH_RATE*dt;
-      pitch=Math.max(-1.2,Math.min(1.2,pitch)); // Allow steeper angles (±70 degrees)
+      pitch=Math.max(-1.0,Math.min(1.0,pitch)); // ±57 degrees
 
-      // Turning (yaw) - A/D (reduced when stalling)
-      const turnMult=spd<STALL_SPEED?0.3:1;
+      // Turning (yaw) - A/D
+      const turnMult=spd<STALL_SPEED?0.2:1;
       angle+=st*TURN_RATE*dt*turnMult;
-      const roll=-st*0.4*turnMult;
+      const roll=-st*0.3*turnMult;
 
-      // PHYSICS: plane flies in direction it's pointing
-      // Thrust pushes forward along plane's axis
+      // SIMPLE PHYSICS:
+      // Engine provides constant thrust
       spd+=THRUST*dt;
 
-      // Drag slows plane (more drag at higher speeds)
+      // Drag increases with speed squared
       spd-=spd*spd*DRAG*dt;
 
-      // Gravity effect depends on pitch:
-      // - Nose down (positive pitch): gravity ADDS speed (diving)
-      // - Nose up (negative pitch): gravity REMOVES speed (climbing)
-      // Stronger effect for steeper angles
-      spd+=Math.sin(pitch)*GRAVITY*dt;
+      // Gravity effect on speed:
+      // Nose UP (positive pitch) = lose speed (climbing costs energy)
+      // Nose DOWN (negative pitch) = gain speed (diving gains energy)
+      const gravityEffect=-Math.sin(pitch)*15*dt;
+      spd+=gravityEffect;
 
-      // STALL DETECTION - if nose too high and speed too low
-      if(pitch<-0.8&&spd<STALL_SPEED){
+      // STALL - nose too high, speed too low
+      if(pitch>0.6&&spd<STALL_SPEED){
         stallTimer+=dt;
-        if(stallTimer>1.5){
-          // STALL! Nose drops, plane falls
-          pitch+=2.5*dt; // Force nose down
-          spd=Math.max(spd,3);
-          if(stallTimer>1.5&&stallTimer<1.7)setS('STALL!');
+        if(stallTimer>1.0){
+          pitch-=1.5*dt; // Force nose down
+          if(stallTimer>1.0&&stallTimer<1.2)setS('STALL!');
         }
       }else{
-        stallTimer=Math.max(0,stallTimer-dt*2);
+        stallTimer=Math.max(0,stallTimer-dt);
       }
       v.userData.stallTimer=stallTimer;
 
       // Clamp speed
-      spd=Math.max(2,Math.min(80,spd)); // Higher max speed for dives
+      spd=Math.max(3,Math.min(MAX_SPEED,spd));
 
-      // Move plane in 3D along its facing direction
+      // MOVEMENT - plane goes where nose points
       // Horizontal movement
       const horizSpeed=Math.cos(pitch)*spd;
       const nx=v.position.x+Math.sin(angle)*horizSpeed*dt;
       const nz=v.position.z+Math.cos(angle)*horizSpeed*dt;
 
-      // Vertical movement - plane flies where it points
-      // Negative pitch (nose up) = climb, positive pitch (nose down) = descend
-      const vertSpeed=-Math.sin(pitch)*spd;
+      // Vertical movement - nose up = climb, nose down = dive
+      const vertSpeed=Math.sin(pitch)*spd;
       const groundY=getTerrainY(nx,nz);
       let ny=v.position.y+vertSpeed*dt;
 
@@ -3339,7 +3340,8 @@ function gameLoop(){
       if(ny<groundY+0.8){
         ny=groundY+0.8;
         if(v.userData.wasAirborne){
-          if(spd>18||pitch>0.2){
+          // Crash if too fast or nose pointing down
+          if(spd>18||pitch<-0.2){
             spd*=0.5;pitch=0;
             setS('Crash landing!');v.userData.wasAirborne=false;
           }else{
@@ -3347,8 +3349,8 @@ function gameLoop(){
             exitV();setS('Landed!');setTimeout(()=>setS(''),2000);
           }
         }
-        // On ground - can still taxi
-        pitch=Math.max(0,pitch); // Can't pitch up through ground
+        // On ground - keep nose level or up
+        pitch=Math.max(0,pitch);
       }
 
       // Update state
