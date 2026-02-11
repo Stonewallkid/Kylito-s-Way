@@ -3003,11 +3003,18 @@ function updatePaintballs(dt){
       createSplat(b.position.x,b.position.y,b.position.z,b.userData.color,'wall');
       recycleBall(b,i);continue;
     }
-    // Vehicle collision
+    // Vehicle collision - tighter hitbox, skip distant vehicles
     let hitV=false;
+    const playerPos=player?player.position:null;
     for(const v of vehicles){
+      // Skip vehicles far from player (probably the abandoned airplane)
+      if(playerPos){
+        const distFromPlayer=Math.sqrt((v.position.x-playerPos.x)**2+(v.position.z-playerPos.z)**2);
+        if(distFromPlayer>50)continue; // Skip vehicles more than 50m away
+      }
       const dx=nx-v.position.x,dz=nz-v.position.z,dy=ny-v.position.y;
-      if(dx*dx+dz*dz<4&&dy>-0.5&&dy<2.5){
+      // Tighter hitbox: 1.5m radius, 2m height
+      if(dx*dx+dz*dz<2.25&&dy>-0.3&&dy<2){
         createSplat(b.position.x,b.position.y,b.position.z,b.userData.color,'wall');
         recycleBall(b,i);hitV=true;break;
       }
@@ -3402,9 +3409,10 @@ function gameLoop(){
         player.position.y+=vertSpeed*dt;
 
         // Player flies face-down (Superman pose) in flight direction
-        // rotation order: first pitch forward to horizontal, then yaw to face direction
-        player.rotation.order='YXZ';
-        player.rotation.set(-Math.PI/2-ws.glidePitch,ws.glideAngle,0);
+        player.rotation.order='XYZ';
+        player.rotation.x=-0.8-ws.glidePitch; // Tilt forward (not fully horizontal)
+        player.rotation.y=ws.glideAngle;
+        player.rotation.z=0;
 
         // Show wingsuit, hide parachute (attached to player)
         if(parachuteMesh)parachuteMesh.visible=false;
