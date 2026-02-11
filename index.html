@@ -899,6 +899,12 @@ async function fetchElevation(){
   const smoothMin=Math.min(...elevs),smoothMax=Math.max(...elevs);
   console.log('Smoothed elevation:',smoothMin.toFixed(1)+' to '+smoothMax.toFixed(1)+'m');
 
+  // Clamp elevation to reasonable range (most neighborhoods are fairly flat)
+  const MAX_ELEV=30;  // Max 30m above spawn
+  const MIN_ELEV=-30; // Max 30m below spawn
+  elevs=elevs.map(e=>Math.max(MIN_ELEV,Math.min(MAX_ELEV,e)));
+  console.log('Clamped elevation to ±30m range');
+
   terrainElevs=elevs;
   // Save to cache
   setCache(cacheKey,{centerElev,elevs});
@@ -1485,9 +1491,17 @@ async function fetchChunkElevation(cx,cz,chunk){
     try{r=await fetch(url)}catch(e){r=await cfetch(url)}
     const d=await r.json();
     if(d.elevation&&d.elevation.length===N*N){
-      // Make relative to center (same as main terrain)
+      // Make relative to main terrain's center elevation
       const centerElev=terrainMinElev||d.elevation[Math.floor(N*N/2)];
-      chunk.elevs=d.elevation.map(e=>(e||0)-centerElev);
+      let elevs=d.elevation.map(e=>(e||0)-centerElev);
+
+      // CLAMP chunk elevations to prevent massive cliffs
+      // Most neighborhoods have <30m elevation change over a few blocks
+      const MAX_CHUNK_ELEV=30;  // Max elevation difference from spawn
+      const MIN_CHUNK_ELEV=-30;
+      elevs=elevs.map(e=>Math.max(MIN_CHUNK_ELEV,Math.min(MAX_CHUNK_ELEV,e)));
+
+      chunk.elevs=elevs;
       chunk.elevGridN=N;
       chunk.elevSize=CHUNK_SIZE;
       chunk.elevOrigin={x:world.x,z:world.z};
@@ -2039,7 +2053,7 @@ function createParachuteMesh(){
 
 // ═══ JETPACK ═══
 let jetpackMesh=null;
-const JETPACK_MAX_FUEL=9; // 9 seconds of fuel
+const JETPACK_MAX_FUEL=15; // 15 seconds of fuel
 let jetpackFuel=JETPACK_MAX_FUEL;
 let jetpackActive=false;
 let jetpackVelY=0;
