@@ -2271,6 +2271,40 @@ function bldColor(tags){
 
 const ROOF_COLORS=[0x553322,0x664433,0x443322,0x332211,0x554433,0x3a2a1a,0x5a3a2a,0x2a2a2a,0x333333,0x444444];
 
+// ═══ CUSTOM BUILDINGS - Real-world appearance overrides ═══
+// Based on photos, we can customize specific buildings to match reality
+const CUSTOM_BUILDINGS=[
+  {
+    // Tin Roof - A Live Music Joint (430 W Dickson St, Fayetteville AR)
+    address:'430 W Dickson',
+    lat:36.0664417,lon:-94.1652586,
+    color:0xaa4422,      // Red/orange brick
+    height:10,           // ~3 stories
+    roofColor:0x333333,  // Dark charcoal
+    roofType:'peaked',   // Triangular gable
+    name:'Tin Roof'
+  }
+];
+
+// Check if a building matches a custom override
+function getCustomBuilding(tags,cx,cz){
+  const addr=((tags['addr:housenumber']||'')+' '+(tags['addr:street']||'')).trim().toLowerCase();
+  const name=(tags.name||'').toLowerCase();
+  for(const cb of CUSTOM_BUILDINGS){
+    // Match by address
+    if(cb.address&&addr.includes(cb.address.toLowerCase()))return cb;
+    // Match by name
+    if(cb.name&&name.includes(cb.name.toLowerCase()))return cb;
+    // Match by coordinates (within ~30m)
+    if(cb.lat&&cb.lon){
+      const pos=ll(cb.lat,cb.lon);
+      const dist=Math.sqrt((pos.x-cx)**2+(pos.z-cz)**2);
+      if(dist<30)return cb;
+    }
+  }
+  return null;
+}
+
 function buildWorld(osm,mapillaryData=[]){
   setS('Building world...');setP(70);
   // Clear previous world data
@@ -2335,21 +2369,36 @@ function buildWorld(osm,mapillaryData=[]){
         coords.forEach(c=>{mnX=Math.min(mnX,c.x);mxX=Math.max(mxX,c.x);mnZ=Math.min(mnZ,c.z);mxZ=Math.max(mxZ,c.z)});
         const bw=mxX-mnX,bd=mxZ-mnZ;
 
+        // Check for custom building override
+        const customBld=getCustomBuilding(tags,cx,cz);
+        if(customBld){
+          h=customBld.height||h; // Use custom height
+          console.log('Custom building found:',customBld.name||customBld.address);
+        }
+
         const geo=new THREE.ExtrudeGeometry(shape,{depth:h+extraH,bevelEnabled:false});geo.rotateX(-Math.PI/2);
-        const col=bldColor(tags);
+        const col=customBld?new THREE.Color(customBld.color):bldColor(tags);
         const mesh=new THREE.Mesh(geo,new THREE.MeshLambertMaterial({color:col}));
         mesh.position.y=ty;
         mesh.castShadow=!isMobile;mesh.receiveShadow=!isMobile;scene.add(mesh);
         bData.push({coords,height:h,baseY:ty});
 
-        if(isRes&&h<12){
+        // Custom building with peaked roof
+        if(customBld&&customBld.roofType==='peaked'){
+          const totalH=h+extraH;
+          const roofH=h*.35;
+          const roofGeo=new THREE.ConeGeometry(Math.max(bw,bd)*.7,roofH,4);
+          const roofCol=customBld.roofColor||0x333333;
+          const roofMesh=new THREE.Mesh(roofGeo,new THREE.MeshLambertMaterial({color:roofCol}));
+          roofMesh.position.set(cx,ty+totalH+roofH/2,cz);roofMesh.rotation.y=Math.PI/4;roofMesh.castShadow=!isMobile;scene.add(roofMesh);
+        }else if(isRes&&h<12&&!customBld){
           // HOUSE: Add peaked roof (at top of extended building)
           const totalH=h+extraH;
           const roofH=h*.4+1;
           const roofGeo=new THREE.ConeGeometry(Math.max(bw,bd)*.65+1,roofH,4);
           const roofMesh=new THREE.Mesh(roofGeo,new THREE.MeshLambertMaterial({color:ROOF_COLORS[Math.floor(Math.random()*ROOF_COLORS.length)]}));
           roofMesh.position.set(cx,ty+totalH+roofH/2,cz);roofMesh.rotation.y=Math.PI/4;roofMesh.castShadow=!isMobile;scene.add(roofMesh);
-        }else{
+        }else if(!customBld){
           // COMMERCIAL/TALL: Windows grid + flat roof detail
           // LOD: Skip windows for distant buildings (>200m from center)
           const distFromCenter=Math.sqrt(cx*cx+cz*cz);
