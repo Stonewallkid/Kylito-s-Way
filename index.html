@@ -3260,17 +3260,19 @@ function gameLoop(){
     if(carAccelInput)ac=1;if(carBrakeInput)br=1;
     if(Math.abs(joyVec.x)>.15)st=-joyVec.x;if(joyVec.y<-.2)ac=Math.min(1,-joyVec.y);if(joyVec.y>.2)br=Math.min(1,joyVec.y);
 
-    // AIRPLANE PHYSICS - realistic flight model
+    // AIRPLANE PHYSICS - realistic flight model with stall
     if(v.userData.isAircraft){
-      const THRUST=12;       // Decent engine - can climb slowly when level
-      const DRAG=0.006;      // Low drag = preserve speed
-      const GRAVITY=12;      // Gravity effect on speed (diving gains, climbing loses)
-      const PITCH_RATE=1.8;  // How fast plane pitches
+      const THRUST=10;       // Moderate engine
+      const DRAG=0.005;      // Low drag = preserve speed
+      const GRAVITY=25;      // Strong gravity effect (big speed changes from pitch)
+      const PITCH_RATE=2.0;  // How fast plane pitches
       const TURN_RATE=1.2;   // How fast plane turns
+      const STALL_SPEED=8;   // Below this speed, plane stalls
 
-      let spd=v.userData.speed||8;
+      let spd=v.userData.speed||10;
       let pitch=v.userData.pitch||0;  // Nose angle: negative=up, positive=down
       let angle=v.userData.angle!==undefined?v.userData.angle:v.rotation.y;
+      let stallTimer=v.userData.stallTimer||0;
 
       // REVERSED CONTROLS like real airplane yoke:
       // W (forward) = push stick = pitch DOWN (nose down)
@@ -3281,11 +3283,12 @@ function gameLoop(){
 
       // Apply pitch input
       pitch+=pitchInput*PITCH_RATE*dt;
-      pitch=Math.max(-0.6,Math.min(0.6,pitch)); // Limit pitch angle
+      pitch=Math.max(-1.2,Math.min(1.2,pitch)); // Allow steeper angles (±70 degrees)
 
-      // Turning (yaw) - A/D
-      angle+=st*TURN_RATE*dt;
-      const roll=-st*0.4; // Bank when turning
+      // Turning (yaw) - A/D (reduced when stalling)
+      const turnMult=spd<STALL_SPEED?0.3:1;
+      angle+=st*TURN_RATE*dt*turnMult;
+      const roll=-st*0.4*turnMult;
 
       // PHYSICS: plane flies in direction it's pointing
       // Thrust pushes forward along plane's axis
@@ -3297,10 +3300,25 @@ function gameLoop(){
       // Gravity effect depends on pitch:
       // - Nose down (positive pitch): gravity ADDS speed (diving)
       // - Nose up (negative pitch): gravity REMOVES speed (climbing)
+      // Stronger effect for steeper angles
       spd+=Math.sin(pitch)*GRAVITY*dt;
 
+      // STALL DETECTION - if nose too high and speed too low
+      if(pitch<-0.8&&spd<STALL_SPEED){
+        stallTimer+=dt;
+        if(stallTimer>1.5){
+          // STALL! Nose drops, plane falls
+          pitch+=2.5*dt; // Force nose down
+          spd=Math.max(spd,3);
+          if(stallTimer>1.5&&stallTimer<1.7)setS('STALL!');
+        }
+      }else{
+        stallTimer=Math.max(0,stallTimer-dt*2);
+      }
+      v.userData.stallTimer=stallTimer;
+
       // Clamp speed
-      spd=Math.max(3,Math.min(60,spd));
+      spd=Math.max(2,Math.min(80,spd)); // Higher max speed for dives
 
       // Move plane in 3D along its facing direction
       // Horizontal movement
