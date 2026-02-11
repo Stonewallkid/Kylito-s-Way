@@ -3208,20 +3208,20 @@ function updateMinimap(){
     for(let y=h/2%step;y<h;y+=step){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(w,y);ctx.stroke()}
   }
 
-  // Roads - thicker and colored by type in expanded
+  // Roads - thicker and colored by type in expanded (centered on player)
   rData.forEach(r=>{
     const lw=expanded?(r.width>7?3:r.width>4?2:1):(r.width>7?1.5:1);
     ctx.strokeStyle=expanded?(r.width>7?'rgba(100,100,140,.6)':r.width>4?'rgba(70,70,100,.5)':'rgba(50,50,70,.35)'):'rgba(60,60,80,.5)';
-    ctx.lineWidth=lw;ctx.beginPath();ctx.moveTo(w/2+r.p1.x*scale,h/2+r.p1.z*scale);ctx.lineTo(w/2+r.p2.x*scale,h/2+r.p2.z*scale);ctx.stroke();
+    ctx.lineWidth=lw;ctx.beginPath();ctx.moveTo(w/2+(r.p1.x-cx)*scale,h/2+(r.p1.z-cz)*scale);ctx.lineTo(w/2+(r.p2.x-cx)*scale,h/2+(r.p2.z-cz)*scale);ctx.stroke();
   });
 
-  // Street names in expanded
+  // Street names in expanded (centered on player)
   if(expanded){
     ctx.font='bold '+Math.max(9,w/65)+'px Arial';ctx.fillStyle='rgba(0,255,170,.45)';ctx.textAlign='center';ctx.textBaseline='middle';
     const shown=new Set();
     rData.forEach(r=>{
       if(!r.name||shown.has(r.name))return;
-      const mx=w/2+(r.p1.x+r.p2.x)/2*scale,mz=h/2+(r.p1.z+r.p2.z)/2*scale;
+      const mx=w/2+((r.p1.x+r.p2.x)/2-cx)*scale,mz=h/2+((r.p1.z+r.p2.z)/2-cz)*scale;
       if(mx<10||mx>w-10||mz<10||mz>h-10)return;
       // Check distance between endpoints for label placement
       const dx=(r.p2.x-r.p1.x)*scale,dz=(r.p2.z-r.p1.z)*scale,len=Math.sqrt(dx*dx+dz*dz);
@@ -3233,30 +3233,30 @@ function updateMinimap(){
     });
   }
 
-  // Buildings
+  // Buildings (centered on player)
   ctx.fillStyle=expanded?'rgba(0,255,170,.12)':'rgba(0,255,170,.15)';
   ctx.strokeStyle=expanded?'rgba(0,255,170,.2)':'transparent';ctx.lineWidth=.5;
-  bData.forEach(b=>{if(b.coords.length<3)return;ctx.beginPath();ctx.moveTo(w/2+b.coords[0].x*scale,h/2+b.coords[0].z*scale);for(let i=1;i<b.coords.length;i++)ctx.lineTo(w/2+b.coords[i].x*scale,h/2+b.coords[i].z*scale);ctx.closePath();ctx.fill();if(expanded)ctx.stroke()});
+  bData.forEach(b=>{if(b.coords.length<3)return;ctx.beginPath();ctx.moveTo(w/2+(b.coords[0].x-cx)*scale,h/2+(b.coords[0].z-cz)*scale);for(let i=1;i<b.coords.length;i++)ctx.lineTo(w/2+(b.coords[i].x-cx)*scale,h/2+(b.coords[i].z-cz)*scale);ctx.closePath();ctx.fill();if(expanded)ctx.stroke()});
 
-  // Building addresses in expanded
+  // Building addresses in expanded (centered on player)
   if(expanded&&buildingAddrs.length){
     ctx.font=Math.max(7,w/80)+'px Arial';ctx.fillStyle='rgba(180,210,255,.35)';ctx.textAlign='center';
     let labelCount=0;
     for(const ba of buildingAddrs){
       if(labelCount>60)break;
-      const bx=w/2+ba.x*scale,bz=h/2+ba.z*scale;
+      const bx=w/2+(ba.x-cx)*scale,bz=h/2+(ba.z-cz)*scale;
       if(bx<5||bx>w-5||bz<5||bz>h-5)continue;
       ctx.fillText(ba.addr,bx,bz-4);labelCount++;
     }
   }
 
-  // Vehicles
+  // Vehicles (centered on player)
   const vSz=expanded?3:1.5;ctx.fillStyle='rgba(255,200,0,.4)';
-  vehicles.forEach(v=>{ctx.fillRect(w/2+v.position.x*scale-vSz/2,h/2+v.position.z*scale-vSz/2,vSz,vSz)});
+  vehicles.forEach(v=>{ctx.fillRect(w/2+(v.position.x-cx)*scale-vSz/2,h/2+(v.position.z-cz)*scale-vSz/2,vSz,vSz)});
 
-  // Player / vehicle position
+  // Player / vehicle position (always at center since map follows player)
   if(!tgt)return;
-  const px=w/2+tgt.position.x*scale,pz=h/2+tgt.position.z*scale;
+  const px=w/2,pz=h/2;
   // Direction indicator
   const pAng=tgt.rotation?tgt.rotation.y:yaw;const aLen=expanded?14:6;
   ctx.strokeStyle=activeVehicle?'rgba(0,170,255,.6)':'rgba(0,255,170,.6)';ctx.lineWidth=expanded?2:1.5;
