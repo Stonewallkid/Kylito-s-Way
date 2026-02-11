@@ -3278,12 +3278,12 @@ function gameLoop(){
       let angle=v.userData.angle!==undefined?v.userData.angle:v.rotation.y;
       let stallTimer=v.userData.stallTimer||0;
 
-      // SIMPLE CONTROLS:
-      // W = pitch UP (climb)
-      // S = pitch DOWN (dive)
+      // YOKE CONTROLS (inverted like real airplane):
+      // W (push forward) = pitch DOWN (dive)
+      // S (pull back) = pitch UP (climb)
       let pitchInput=0;
-      if(mF)pitchInput=1;   // W = nose up
-      if(mB)pitchInput=-1;  // S = nose down
+      if(mF)pitchInput=-1;  // W = push forward = nose down
+      if(mB)pitchInput=1;   // S = pull back = nose up
 
       // Apply pitch input
       pitch+=pitchInput*PITCH_RATE*dt;
