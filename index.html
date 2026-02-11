@@ -283,7 +283,7 @@ const BALL_POOL_SIZE=50,SPLAT_POOL_SIZE=350;
 const PAINT_SPEED=120,PAINT_GRAV=-6,PAINT_COLORS=['#ff3366','#33ff66','#3366ff','#ffff33','#ff66ff','#ff8800','#00ffff','#ffffff'];
 const CAR_COLORS=[0xf0f0f0,0xe8e8e8,0x1a1a1a,0x111111,0x888888,0x999999,0x666666,0x771111,0xbb2222,0x112266,0x1144aa,0x114411,0x665522,0xaa8844,0xddddcc];
 // ═══ CACHING SYSTEM ═══
-const CACHE_VERSION=14,CACHE_EXPIRY=7*24*60*60*1000; // 7 days - v14: buildings extend to ground, gentler hills
+const CACHE_VERSION=15,CACHE_EXPIRY=7*24*60*60*1000; // 7 days - v15: airplane with glider physics
 function getCacheKey(type,lat,lon){return`kw_${type}_${lat.toFixed(4)}_${lon.toFixed(4)}_v${CACHE_VERSION}`}
 function getCache(key){
   try{
@@ -1868,6 +1868,42 @@ function deleteSelected(){
 }
 
 // ═══ VEHICLES ═══
+function createAirplane(){
+  const g=new THREE.Group();
+  const bodyMat=new THREE.MeshLambertMaterial({color:0xeeeeee});
+  const wingMat=new THREE.MeshLambertMaterial({color:0xcc0000});
+  const glassMat=new THREE.MeshLambertMaterial({color:0x335577,transparent:true,opacity:0.5});
+  // Fuselage
+  const fuse=new THREE.Mesh(new THREE.CylinderGeometry(0.3,0.2,3,8),bodyMat);
+  fuse.rotation.x=Math.PI/2;fuse.position.z=0;g.add(fuse);
+  // Nose cone
+  const nose=new THREE.Mesh(new THREE.ConeGeometry(0.3,0.8,8),bodyMat);
+  nose.rotation.x=-Math.PI/2;nose.position.z=1.9;g.add(nose);
+  // Cockpit
+  const cockpit=new THREE.Mesh(new THREE.SphereGeometry(0.25,6,4,0,Math.PI*2,0,Math.PI/2),glassMat);
+  cockpit.position.set(0,0.2,0.5);g.add(cockpit);
+  // Main wings
+  const wingGeo=new THREE.BoxGeometry(5,0.05,0.8);
+  const wings=new THREE.Mesh(wingGeo,wingMat);
+  wings.position.set(0,0,0);g.add(wings);
+  // Tail horizontal
+  const tailH=new THREE.Mesh(new THREE.BoxGeometry(1.5,0.04,0.4),wingMat);
+  tailH.position.set(0,0,-1.4);g.add(tailH);
+  // Tail vertical
+  const tailV=new THREE.Mesh(new THREE.BoxGeometry(0.04,0.6,0.5),wingMat);
+  tailV.position.set(0,0.3,-1.4);g.add(tailV);
+  // Propeller
+  const prop=new THREE.Mesh(new THREE.BoxGeometry(0.8,0.08,0.1),new THREE.MeshLambertMaterial({color:0x333333}));
+  prop.position.z=2.3;g.add(prop);
+  g.userData.propeller=prop;
+  // Shadow
+  const sh=new THREE.Mesh(new THREE.PlaneGeometry(5,3),new THREE.MeshBasicMaterial({color:0,transparent:true,opacity:0.15}));
+  sh.rotation.x=-Math.PI/2;sh.position.y=-0.5;g.add(sh);
+  g.userData={type:'airplane',speed:0,pitch:0,roll:0,altitude:0,isAircraft:true};
+  return g;
+}
+let airplane=null;
+
 function createVehicle(type,color){
   const g=new THREE.Group(),bm=new THREE.MeshLambertMaterial({color}),dk=new THREE.MeshLambertMaterial({color:0x111111}),gls=new THREE.MeshLambertMaterial({color:0x335577,transparent:true,opacity:.5}),hl=new THREE.MeshBasicMaterial({color:0xffffcc}),tl=new THREE.MeshBasicMaterial({color:0xff2222}),seg=isMobile?5:8;
   function a(geo,mat,px,py,pz,rx,ry,rz){const m=new THREE.Mesh(geo,mat);m.position.set(px,py,pz);if(rx||ry||rz)m.rotation.set(rx||0,ry||0,rz||0);m.castShadow=!isMobile;g.add(m)}
@@ -2779,6 +2815,55 @@ function gameLoop(){
     if(mF)ac=1;if(mB)br=1;if(mL)st=1;if(mR)st=-1;
     if(carAccelInput)ac=1;if(carBrakeInput)br=1;
     if(Math.abs(joyVec.x)>.15)st=-joyVec.x;if(joyVec.y<-.2)ac=Math.min(1,-joyVec.y);if(joyVec.y>.2)br=Math.min(1,joyVec.y);
+
+    // AIRPLANE PHYSICS
+    if(v.userData.isAircraft){
+      const THRUST=8,LIFT_FACTOR=0.015,DRAG=0.3,GRAVITY=15,MIN_LIFT_SPEED=12;
+      let spd=v.userData.speed||0;
+      let pitchInput=0;if(mF)pitchInput=-1;if(mB)pitchInput=1; // W=pitch down, S=pitch up
+      // Throttle always on (weak engine)
+      spd+=THRUST*dt;
+      // Drag
+      spd-=spd*DRAG*dt;
+      // Pitch affects vertical speed
+      v.userData.pitch=(v.userData.pitch||0)+pitchInput*1.5*dt;
+      v.userData.pitch=Math.max(-0.8,Math.min(0.8,v.userData.pitch));
+      // Slowly return to level
+      v.userData.pitch*=0.98;
+      // Turning
+      v.userData.angle=(v.userData.angle||v.rotation.y)+st*1.5*dt;
+      v.userData.roll=(v.userData.roll||0)+(-st*0.5-v.userData.roll)*0.1;
+      // Calculate lift (speed squared, only works above min speed)
+      const lift=spd>MIN_LIFT_SPEED?(spd-MIN_LIFT_SPEED)**2*LIFT_FACTOR:0;
+      // Vertical velocity: lift - gravity + pitch contribution
+      const climbRate=lift-GRAVITY*dt+(-v.userData.pitch*spd*0.5);
+      // Diving increases speed, climbing decreases it (energy conservation)
+      if(v.userData.pitch>0.1)spd+=v.userData.pitch*8*dt; // Diving = gain speed
+      if(v.userData.pitch<-0.1)spd+=v.userData.pitch*5*dt; // Climbing = lose speed
+      spd=Math.max(5,Math.min(50,spd)); // Clamp speed
+      // Move airplane
+      const nx=v.position.x+Math.sin(v.userData.angle)*spd*dt;
+      const nz=v.position.z+Math.cos(v.userData.angle)*spd*dt;
+      const groundY=getTerrainY(nx,nz);
+      let ny=v.position.y+climbRate*dt;
+      // Can't go below ground
+      if(ny<groundY+1){
+        ny=groundY+1;
+        if(spd>15){spd*=0.7;setS('Rough landing!')}// Crash landing
+        else{v.userData.speed=0;exitV();setS('Landed!');setTimeout(()=>setS(''),2000)}
+      }
+      v.position.set(nx,ny,nz);
+      v.userData.speed=spd;
+      v.rotation.y=v.userData.angle;
+      v.rotation.x=v.userData.pitch;
+      v.rotation.z=v.userData.roll;
+      // Spin propeller
+      if(v.userData.propeller)v.userData.propeller.rotation.z+=spd*0.5;
+      // Update speedometer to show airspeed
+      document.getElementById('spd-val').textContent=Math.abs(spd*2.237).toFixed(0);
+      camTarget=v.position.clone().add(new THREE.Vector3(0,2,0));yaw=v.userData.angle+Math.PI;
+    }else{
+    // GROUND VEHICLE PHYSICS
     let spd=v.userData.speed;
     // Initialize drift angle if not set
     if(v.userData.moveAngle===undefined)v.userData.moveAngle=v.userData.angle;
@@ -2830,6 +2915,7 @@ function gameLoop(){
     }
     document.getElementById('spd-val').textContent=Math.abs(spd*2.237).toFixed(0);
     camTarget=v.position.clone().add(new THREE.Vector3(0,1.5,0));yaw=v.userData.angle+Math.PI;
+    } // end ground vehicle else
   }else if(player){
     const dir=new THREE.Vector3();if(mF)dir.z-=1;if(mB)dir.z+=1;if(mL)dir.x-=1;if(mR)dir.x+=1;
     if(Math.abs(joyVec.x)>.1||Math.abs(joyVec.y)>.1){dir.x+=joyVec.x;dir.z+=joyVec.y}
@@ -2960,6 +3046,13 @@ async function startGame(){
     createCharacter();setP(100);
     // Place player at terrain height
     if(player)player.position.y=getTerrainY(player.position.x,player.position.z)+.15;
+    // Spawn airplane next to player
+    airplane=createAirplane();
+    const planeX=spawnX+5,planeZ=spawnZ+3;
+    airplane.position.set(planeX,getTerrainY(planeX,planeZ)+0.5,planeZ);
+    airplane.rotation.y=Math.PI/4;
+    scene.add(airplane);
+    vehicles.push(airplane); // Add to vehicles so E key works
     // Spawn marker
     if(spawnAddr){
       const pinY=getTerrainY(spawnX,spawnZ);
