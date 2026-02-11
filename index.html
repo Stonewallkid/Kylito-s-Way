@@ -2818,10 +2818,10 @@ function gameLoop(){
 
     // AIRPLANE PHYSICS - realistic flight model
     if(v.userData.isAircraft){
-      const THRUST=5;        // Weak engine - can barely maintain level flight
-      const DRAG=0.015;      // Air resistance (less drag = keep speed longer)
-      const GRAVITY=15;      // Pulls plane down (reduced for better climbing)
-      const PITCH_RATE=1.5;  // How fast plane pitches
+      const THRUST=4;        // Weak engine - can barely maintain level flight
+      const DRAG=0.008;      // Low drag = preserve speed for pumping altitude
+      const GRAVITY=18;      // Gravity effect on speed (more = bigger pumps)
+      const PITCH_RATE=1.8;  // How fast plane pitches
       const TURN_RATE=1.2;   // How fast plane turns
 
       let spd=v.userData.speed||8;
@@ -2894,14 +2894,14 @@ function gameLoop(){
       v.userData.speed=spd;
       v.userData.pitch=pitch;
       v.userData.angle=angle;
-      v.rotation.set(pitch,angle,roll);
+      v.rotation.set(-pitch,angle,roll); // Negative pitch so nose-up looks up
 
       // Position player riding on top of plane (broomstick style!)
       if(player&&player.visible){
         player.position.copy(v.position);
         player.position.y+=0.8; // Sit on top
         player.rotation.y=angle;
-        player.rotation.x=pitch*0.5; // Lean with plane
+        player.rotation.x=-pitch*0.5; // Lean with plane
       }
 
       // Spin propeller based on speed
