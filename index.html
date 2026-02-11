@@ -2818,8 +2818,8 @@ function gameLoop(){
 
     // AIRPLANE PHYSICS
     if(v.userData.isAircraft){
-      const THRUST=8,LIFT_FACTOR=0.015,DRAG=0.3,GRAVITY=15,MIN_LIFT_SPEED=12;
-      let spd=v.userData.speed||0;
+      const THRUST=12,LIFT_FACTOR=0.02,DRAG=0.25,GRAVITY=12,MIN_LIFT_SPEED=10;
+      let spd=v.userData.speed||5; // Start with some speed
       let pitchInput=0;if(mF)pitchInput=-1;if(mB)pitchInput=1; // W=pitch down, S=pitch up
       // Throttle always on (weak engine)
       spd+=THRUST*dt;
@@ -2846,11 +2846,16 @@ function gameLoop(){
       const nz=v.position.z+Math.cos(v.userData.angle)*spd*dt;
       const groundY=getTerrainY(nx,nz);
       let ny=v.position.y+climbRate*dt;
+      // Track if we've actually taken off
+      if(v.position.y>groundY+5)v.userData.wasAirborne=true;
       // Can't go below ground
-      if(ny<groundY+1){
-        ny=groundY+1;
-        if(spd>15){spd*=0.7;setS('Rough landing!')}// Crash landing
-        else{v.userData.speed=0;exitV();setS('Landed!');setTimeout(()=>setS(''),2000)}
+      if(ny<groundY+0.8){
+        ny=groundY+0.8;
+        // Only trigger landing if we actually flew first
+        if(v.userData.wasAirborne){
+          if(spd>20){spd*=0.5;setS('Rough landing!');v.userData.wasAirborne=false}
+          else{v.userData.speed=0;v.userData.wasAirborne=false;exitV();setS('Landed!');setTimeout(()=>setS(''),2000)}
+        }
       }
       v.position.set(nx,ny,nz);
       v.userData.speed=spd;
