@@ -2545,6 +2545,23 @@ function ptInBuilding(x,z){
   if(ptNearBarrier(x,z,0.6))return true;
   return false;
 }
+// Get roof height if standing on a building, null otherwise
+function getBuildingRoofY(x,z){
+  for(const b of bData){
+    if(b.coords.length>=3&&ptInPoly(x,z,b.coords)){
+      const baseY=b.baseY||getTerrainY(x,z);
+      return baseY+b.height;
+    }
+  }
+  return null;
+}
+// Get the surface height (terrain or roof, whichever is higher)
+function getSurfaceY(x,z){
+  const terrainY=getTerrainY(x,z);
+  const roofY=getBuildingRoofY(x,z);
+  if(roofY!==null)return Math.max(terrainY,roofY);
+  return terrainY;
+}
 function ptInWater(x,z){
   for(const w of waterData){
     if(w.coords.length>=3&&ptInPoly(x,z,w.coords))return w;
@@ -3316,8 +3333,8 @@ function gameLoop(){
       player.position.y+=ws.wsVelY*dt;
       player.rotation.y=yaw;
 
-      // Ground check
-      const groundY=getTerrainY(player.position.x,player.position.z)+.15;
+      // Ground check (land on roofs too)
+      const groundY=getSurfaceY(player.position.x,player.position.z)+.15;
       if(player.position.y<=groundY){
         player.position.y=groundY;
         const wasChute=ws.parachute;
@@ -3349,7 +3366,11 @@ function gameLoop(){
     const im=dir.length();if(im>0)dir.normalize();dir.applyAxisAngle(new THREE.Vector3(0,1,0),yaw);
     const spd=P_SPD*(sprinting?SPRINT:1)*Math.min(im,1);
     const nx=player.position.x+dir.x*spd*dt,nz=player.position.z+dir.z*spd*dt;
-    if(!ptInBuilding(nx,nz)){player.position.x=nx;player.position.z=nz}
+    // Check if we're on a rooftop (above ground level)
+    const currentRoofY=getBuildingRoofY(player.position.x,player.position.z);
+    const onRoof=currentRoofY!==null&&player.position.y>currentRoofY-0.5;
+    // If on roof, allow walking freely. If on ground, block buildings.
+    if(onRoof||!ptInBuilding(nx,nz)){player.position.x=nx;player.position.z=nz}
     else if(!ptInBuilding(nx,player.position.z))player.position.x=nx;
     else if(!ptInBuilding(player.position.x,nz))player.position.z=nz;
     if(im>.1){
@@ -3364,7 +3385,7 @@ function gameLoop(){
       yaw+=df*.04; // gentle follow
     }
     velY+=GRAV*dt;player.position.y+=velY*dt;
-    const groundY=getTerrainY(player.position.x,player.position.z)+.15;
+    const groundY=getSurfaceY(player.position.x,player.position.z)+.15;
     if(player.position.y<=groundY){player.position.y=groundY;velY=0;onGround=true}
     animChar(dt,im*spd);
     }
@@ -3481,7 +3502,12 @@ async function startGame(){
     if(player)player.position.y=getTerrainY(player.position.x,player.position.z)+.15;
     // Spawn airplane next to player
     airplane=createAirplane();
-    const planeX=spawnX+5,planeZ=spawnZ+3;
+    let planeX=spawnX+5,planeZ=spawnZ+3;
+    // Make sure plane doesn't spawn in a building
+    for(let tries=0;tries<20&&ptInBuilding(planeX,planeZ);tries++){
+      planeX=spawnX+(Math.random()-0.5)*30;
+      planeZ=spawnZ+(Math.random()-0.5)*30;
+    }
     airplane.position.set(planeX,getTerrainY(planeX,planeZ)+0.5,planeZ);
     airplane.rotation.y=Math.PI/4;
     scene.add(airplane);
