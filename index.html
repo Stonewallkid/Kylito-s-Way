@@ -2387,8 +2387,73 @@ function respawn(){
   setTimeout(()=>setS(''),2000);
 }
 function findNearest(){if(!player)return null;let b=null,bd=ENTER_DIST**2;for(const v of vehicles){const d=(v.position.x-player.position.x)**2+(v.position.z-player.position.z)**2;if(d<bd){bd=d;b=v}}return b}
-function enterV(v){activeVehicle=v;player.visible=v.userData.isAircraft?true:false;carAccelInput=0;carBrakeInput=0;document.getElementById('speedometer').style.display='block';document.getElementById('vp').style.display='none';if(isMobile)updateBtns()}
-function exitV(){if(!activeVehicle)return;const a=activeVehicle.rotation.y;let ex=activeVehicle.position.x+Math.cos(a)*3,ez=activeVehicle.position.z-Math.sin(a)*3;if(ptInBuilding(ex,ez)){ex=activeVehicle.position.x-Math.cos(a)*3;ez=activeVehicle.position.z+Math.sin(a)*3}player.position.set(ex,getTerrainY(ex,ez)+.15,ez);player.visible=true;activeVehicle.userData.speed=0;activeVehicle=null;document.getElementById('speedometer').style.display='none';if(isMobile)updateBtns()}
+function enterV(v){activeVehicle=v;player.visible=v.userData.isAircraft?true:false;carAccelInput=0;carBrakeInput=0;document.getElementById('speedometer').style.display='block';document.getElementById('vp').style.display='none';if(v.userData.isAircraft)player.userData.hasChute=true;if(isMobile)updateBtns()}
+function exitV(){
+  if(!activeVehicle)return;
+  const v=activeVehicle;
+  const groundY=getTerrainY(v.position.x,v.position.z);
+  const airborne=v.position.y>groundY+10&&v.userData.isAircraft;
+
+  if(airborne&&player.userData.hasChute){
+    // Jump out into wingsuit!
+    player.position.copy(v.position);
+    player.visible=true;
+    player.userData.wingsuit=true;
+    player.userData.parachute=false;
+    player.userData.wsVelX=Math.sin(v.userData.angle)*(v.userData.speed||10);
+    player.userData.wsVelZ=Math.cos(v.userData.angle)*(v.userData.speed||10);
+    player.userData.wsVelY=-5;
+    activeVehicle=null;
+    document.getElementById('speedometer').style.display='none';
+    setS('WINGSUIT! Press SPACE for parachute');
+    if(isMobile)updateBtns();
+    return;
+  }
+
+  // Normal ground exit
+  const a=v.rotation.y;
+  let ex=v.position.x+Math.cos(a)*3,ez=v.position.z-Math.sin(a)*3;
+  if(ptInBuilding(ex,ez)){ex=v.position.x-Math.cos(a)*3;ez=v.position.z+Math.sin(a)*3}
+  player.position.set(ex,getTerrainY(ex,ez)+.15,ez);
+  player.visible=true;
+  v.userData.speed=0;
+  activeVehicle=null;
+  document.getElementById('speedometer').style.display='none';
+  if(isMobile)updateBtns();
+}
+
+// Paint bomb from plane
+let paintBombs=[];
+function dropPaintBomb(){
+  if(!activeVehicle||!activeVehicle.userData.isAircraft)return;
+  const bomb=new THREE.Mesh(
+    new THREE.SphereGeometry(0.3,6,6),
+    new THREE.MeshLambertMaterial({color:new THREE.Color(paintColor)})
+  );
+  bomb.position.copy(activeVehicle.position);
+  bomb.position.y-=1;
+  bomb.userData={velY:0,color:paintColor};
+  scene.add(bomb);
+  paintBombs.push(bomb);
+}
+function updatePaintBombs(dt){
+  for(let i=paintBombs.length-1;i>=0;i--){
+    const b=paintBombs[i];
+    b.userData.velY-=30*dt; // Gravity
+    b.position.y+=b.userData.velY*dt;
+    const groundY=getTerrainY(b.position.x,b.position.z);
+    if(b.position.y<=groundY+0.5){
+      // SPLAT! Big paint explosion
+      for(let s=0;s<8;s++){
+        const sx=b.position.x+(Math.random()-0.5)*6;
+        const sz=b.position.z+(Math.random()-0.5)*6;
+        createSplat(sx,getTerrainY(sx,sz)+0.05,sz,b.userData.color,'ground');
+      }
+      scene.remove(b);
+      paintBombs.splice(i,1);
+    }
+  }
+}
 
 // ═══ INIT ═══
 function initThree(){
@@ -2418,7 +2483,7 @@ function setupDesktop(){
     if(e.code==='F3'){e.preventDefault();document.getElementById('debug-panel').classList.toggle('show');return}
     if(e.code==='Tab'){e.preventDefault();toggleEdit();return}
     if(e.code==='KeyE'||e.code==='KeyF'){if(activeVehicle)exitV();else{const v=findNearest();if(v)enterV(v)}return}
-    switch(e.code){case'KeyW':case'ArrowUp':mF=1;break;case'KeyS':case'ArrowDown':mB=1;break;case'KeyA':case'ArrowLeft':mL=1;break;case'KeyD':case'ArrowRight':mR=1;break;case'ShiftLeft':case'ShiftRight':if(activeVehicle)carEBrake=1;else sprinting=true;break;case'Space':e.preventDefault();if(!activeVehicle&&onGround){velY=JUMP;onGround=false}break}
+    switch(e.code){case'KeyW':case'ArrowUp':mF=1;break;case'KeyS':case'ArrowDown':mB=1;break;case'KeyA':case'ArrowLeft':mL=1;break;case'KeyD':case'ArrowRight':mR=1;break;case'ShiftLeft':case'ShiftRight':if(activeVehicle)carEBrake=1;else sprinting=true;break;case'Space':e.preventDefault();if(activeVehicle&&activeVehicle.userData.isAircraft){dropPaintBomb()}else if(player&&player.userData.wingsuit&&!player.userData.parachute){player.userData.parachute=true;setS('Parachute deployed!')}else if(!activeVehicle&&onGround){velY=JUMP;onGround=false}break}
   });
   document.addEventListener('keyup',e=>{switch(e.code){case'KeyW':case'ArrowUp':mF=0;break;case'KeyS':case'ArrowDown':mB=0;break;case'KeyA':case'ArrowLeft':mL=0;break;case'KeyD':case'ArrowRight':mR=0;break;case'ShiftLeft':case'ShiftRight':sprinting=false;carEBrake=0;break}});
   let md=false,lmx=0,lmy=0,dragDist=0,mouseX=window.innerWidth/2,mouseY=window.innerHeight/2;
@@ -2966,6 +3031,34 @@ function gameLoop(){
     camTarget=v.position.clone().add(new THREE.Vector3(0,1.5,0));yaw=v.userData.angle+Math.PI;
     } // end ground vehicle else
   }else if(player){
+    // WINGSUIT / PARACHUTE MODE
+    if(player.userData.wingsuit||player.userData.parachute){
+      const ws=player.userData;
+      // Steering
+      if(mL)yaw+=2*dt;if(mR)yaw-=2*dt;
+      // Wingsuit: fast forward, moderate descent
+      // Parachute: slow forward, slow descent
+      const fwdSpeed=ws.parachute?3:15;
+      const fallSpeed=ws.parachute?-4:-12;
+      ws.wsVelX=Math.sin(yaw)*fwdSpeed;
+      ws.wsVelZ=Math.cos(yaw)*fwdSpeed;
+      ws.wsVelY+=(fallSpeed-ws.wsVelY)*0.1; // Approach target fall speed
+      player.position.x+=ws.wsVelX*dt;
+      player.position.z+=ws.wsVelZ*dt;
+      player.position.y+=ws.wsVelY*dt;
+      player.rotation.y=yaw;
+      player.rotation.x=ws.parachute?0:-0.5; // Lean forward in wingsuit
+      const groundY=getTerrainY(player.position.x,player.position.z)+.15;
+      if(player.position.y<=groundY){
+        player.position.y=groundY;
+        player.userData.wingsuit=false;
+        player.userData.parachute=false;
+        player.rotation.x=0;
+        setS('Landed safely!');setTimeout(()=>setS(''),2000);
+      }
+      camTarget=player.position.clone().add(new THREE.Vector3(0,2,0));
+    }else{
+    // NORMAL WALKING
     const dir=new THREE.Vector3();if(mF)dir.z-=1;if(mB)dir.z+=1;if(mL)dir.x-=1;if(mR)dir.x+=1;
     if(Math.abs(joyVec.x)>.1||Math.abs(joyVec.y)>.1){dir.x+=joyVec.x;dir.z+=joyVec.y}
     const im=dir.length();if(im>0)dir.normalize();dir.applyAxisAngle(new THREE.Vector3(0,1,0),yaw);
@@ -2988,6 +3081,7 @@ function gameLoop(){
     velY+=GRAV*dt;player.position.y+=velY*dt;
     const groundY=getTerrainY(player.position.x,player.position.z)+.15;
     if(player.position.y<=groundY){player.position.y=groundY;velY=0;onGround=true}
+    }
     // Drowning check
     if(checkDrowning(player.position.x,player.position.y,player.position.z)){respawn()}
     animChar(dt,im*spd);
@@ -3025,6 +3119,8 @@ function gameLoop(){
   if(selHighlight)selHighlight.material.opacity=.3+.3*Math.sin(Date.now()*.005);
   // Paintball physics
   if(paintMode)updatePaintballs(dt);
+  // Paint bombs (from airplane)
+  if(paintBombs.length)updatePaintBombs(dt);
   // Track velocity for predictive chunk loading (uses tgt from address detection above)
   if(tgt){
     const vx=(tgt.position.x-lastPosX)/dt,vz=(tgt.position.z-lastPosZ)/dt;

@@ -24,6 +24,11 @@
 - [x] Speedometer HUD
 - [x] Collision with buildings
 - [x] E-brake drifting (Shift key) - lock rear wheels and slide
+- [x] Airplane with glider physics (pump altitude by diving then climbing)
+- [x] Player rides on top of airplane (broomstick style)
+- [x] Wingsuit (deploy by exiting plane in air) - fast glide
+- [x] Parachute (Space while in wingsuit) - slow safe descent
+- [x] Paint bombs (Space while in airplane) - drop paint explosions
 
 ### Edit Mode
 - [x] Place buildings (house, commercial)
@@ -143,6 +148,10 @@
 ## Ideas / Backlog
 
 - [ ] Cliff mode / extreme terrain toggle (exaggerate elevation for fun gameplay)
+- [ ] Hide airplane/wingsuit as pickups in level (find before you can fly)
+- [ ] Parachute/wingsuit as separate pickups
+- [ ] More aircraft types (helicopter, hang glider)
+- [ ] Paint bomb upgrades (bigger splash, different patterns)
 - [ ] VR support
 - [ ] AR mode (overlay on camera)
 - [ ] Replay system for matches
@@ -188,6 +197,16 @@
 - Added water bodies (rivers, creeks, lakes) rendered as blue transparent surfaces
 - Added drowning mechanic - stay underwater 2+ seconds = respawn
 - Vehicles stall and eject player when driven into water
+- Added flyable airplane with glider/pump physics
+  - Weak engine requires diving to gain speed, then pull up to climb
+  - Realistic yoke controls (W=pitch down, S=pitch up)
+  - Player rides on top broomstick-style
+- Added wingsuit - exit plane while airborne to glide
+- Added parachute - press Space in wingsuit for slow descent
+- Added paint bombs - press Space in airplane to drop paint explosions
+- Fixed buildings on slopes - now extend walls down to lowest ground point
+- Added procedural terrain fallback when elevation API is rate limited
+- Reduced paintball speed/range for more realistic arcs
 
 ---
 
