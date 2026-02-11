@@ -1990,6 +1990,160 @@ function createParachuteMesh(){
   parachuteMesh=g;
 }
 
+// ═══ NPCs ═══
+const npcs=[];
+let npcsSentHome=0;
+const NPC_COUNT=15; // Number of NPCs to spawn
+
+function createNPC(){
+  const g=new THREE.Group();
+  const skinTones=[0xd4a574,0xc68642,0x8d5524,0xffdbac,0xe0ac69];
+  const shirtColors=[0x2288dd,0xdd4422,0x22aa44,0xaa44aa,0xffaa00,0x4488ff,0xff6699,0x44dddd];
+  const pantsColors=[0x334455,0x222233,0x443322,0x224433,0x553322];
+
+  const skin=skinTones[Math.floor(Math.random()*skinTones.length)];
+  const shirt=shirtColors[Math.floor(Math.random()*shirtColors.length)];
+  const pants=pantsColors[Math.floor(Math.random()*pantsColors.length)];
+
+  const mk=(geo,c)=>new THREE.Mesh(geo,new THREE.MeshLambertMaterial({color:c}));
+  // Body
+  const torso=mk(new THREE.BoxGeometry(.5,.5,.3),shirt);torso.position.y=1.0;g.add(torso);
+  const head=mk(new THREE.BoxGeometry(.3,.35,.3),skin);head.position.y=1.5;g.add(head);
+  // Limbs
+  g.armL=mk(new THREE.BoxGeometry(.15,.45,.18),shirt);g.armL.position.set(-.35,1.0,0);g.add(g.armL);
+  g.armR=mk(new THREE.BoxGeometry(.15,.45,.18),shirt);g.armR.position.set(.35,1.0,0);g.add(g.armR);
+  g.legL=mk(new THREE.BoxGeometry(.18,.45,.2),pants);g.legL.position.set(-.12,.45,0);g.add(g.legL);
+  g.legR=mk(new THREE.BoxGeometry(.18,.45,.2),pants);g.legR.position.set(.12,.45,0);g.add(g.legR);
+  // Shadow
+  const shad=new THREE.Mesh(new THREE.PlaneGeometry(.8,.8),new THREE.MeshBasicMaterial({color:0,transparent:true,opacity:.15}));
+  shad.rotation.x=-Math.PI/2;shad.position.y=.02;g.add(shad);
+
+  g.userData={
+    walkAngle:Math.random()*Math.PI*2,
+    walkSpeed:1+Math.random()*1.5,
+    turnTimer:Math.random()*3,
+    animTime:0,
+    sleeping:false,
+    sleepTimer:0
+  };
+  return g;
+}
+
+function spawnNPCs(){
+  // Spawn NPCs near roads
+  for(let i=0;i<NPC_COUNT;i++){
+    const npc=createNPC();
+    // Random position, preferring near roads
+    let x,z;
+    if(rData.length>0&&Math.random()<0.8){
+      // Near a road
+      const rd=rData[Math.floor(Math.random()*rData.length)];
+      const t=Math.random();
+      x=rd.p1.x+(rd.p2.x-rd.p1.x)*t+(Math.random()-0.5)*10;
+      z=rd.p1.z+(rd.p2.z-rd.p1.z)*t+(Math.random()-0.5)*10;
+    }else{
+      // Random position
+      x=(Math.random()-0.5)*RADIUS*1.5;
+      z=(Math.random()-0.5)*RADIUS*1.5;
+    }
+    // Make sure not in building
+    if(ptInBuilding(x,z)){
+      x+=(Math.random()-0.5)*20;
+      z+=(Math.random()-0.5)*20;
+    }
+    npc.position.set(x,getTerrainY(x,z)+0.02,z);
+    scene.add(npc);
+    npcs.push(npc);
+  }
+}
+
+function updateNPCs(dt){
+  for(const npc of npcs){
+    const ud=npc.userData;
+    if(ud.sleeping){
+      // NPC is sleeping - count down then remove
+      ud.sleepTimer-=dt;
+      if(ud.sleepTimer<=0){
+        scene.remove(npc);
+        npcs.splice(npcs.indexOf(npc),1);
+      }
+      continue;
+    }
+
+    // Random direction changes
+    ud.turnTimer-=dt;
+    if(ud.turnTimer<=0){
+      ud.walkAngle+=((Math.random()-0.5)*Math.PI);
+      ud.turnTimer=2+Math.random()*4;
+    }
+
+    // Walk forward
+    const speed=ud.walkSpeed;
+    const nx=npc.position.x+Math.sin(ud.walkAngle)*speed*dt;
+    const nz=npc.position.z+Math.cos(ud.walkAngle)*speed*dt;
+
+    // Avoid buildings and stay in bounds
+    if(!ptInBuilding(nx,nz)&&Math.abs(nx)<RADIUS&&Math.abs(nz)<RADIUS){
+      npc.position.x=nx;
+      npc.position.z=nz;
+    }else{
+      // Turn around
+      ud.walkAngle+=Math.PI+((Math.random()-0.5)*0.5);
+    }
+
+    // Follow terrain
+    npc.position.y=getTerrainY(npc.position.x,npc.position.z)+0.02;
+    npc.rotation.y=ud.walkAngle;
+
+    // Walk animation
+    ud.animTime+=dt*8;
+    const swing=Math.sin(ud.animTime)*0.25;
+    npc.legL.position.z=swing;
+    npc.legR.position.z=-swing;
+    npc.armL.position.z=-swing*0.5;
+    npc.armR.position.z=swing*0.5;
+  }
+}
+
+function sendNPCToSleep(npc){
+  if(npc.userData.sleeping)return;
+  npc.userData.sleeping=true;
+  npc.userData.sleepTimer=3; // Disappear after 3 seconds
+  npcsSentHome++;
+  updateNPCCounter();
+  // Make NPC fall over
+  npc.rotation.x=-Math.PI/2;
+  npc.position.y+=0.3;
+  setS('Sent home! Total: '+npcsSentHome);
+  setTimeout(()=>setS(''),1500);
+}
+
+function updateNPCCounter(){
+  let counter=document.getElementById('npc-counter');
+  if(!counter){
+    counter=document.createElement('div');
+    counter.id='npc-counter';
+    counter.style.cssText='position:fixed;top:60px;right:15px;color:#0fa;font:bold 14px Orbitron,monospace;text-shadow:0 0 5px #000;z-index:100;';
+    document.body.appendChild(counter);
+  }
+  counter.textContent='😴 Sent Home: '+npcsSentHome;
+}
+
+function checkNPCHit(x,y,z,radius){
+  // Check if position hits any NPC
+  for(const npc of npcs){
+    if(npc.userData.sleeping)continue;
+    const dx=npc.position.x-x;
+    const dy=npc.position.y+0.8-y; // Check against NPC center
+    const dz=npc.position.z-z;
+    const dist=Math.sqrt(dx*dx+dy*dy+dz*dz);
+    if(dist<radius+0.5){ // NPC hitbox ~0.5m
+      return npc;
+    }
+  }
+  return null;
+}
+
 // ═══ WORLD BUILDING ═══
 async function fetchOSM(){
   setS('Downloading map...');setP(10);
@@ -2496,6 +2650,15 @@ function updatePaintBombs(dt){
         const sz=b.position.z+(Math.random()-0.5)*6;
         createSplat(sx,getTerrainY(sx,sz)+0.05,sz,b.userData.color,'ground');
       }
+      // Check for NPCs in explosion radius
+      for(const npc of npcs){
+        if(npc.userData.sleeping)continue;
+        const dx=npc.position.x-b.position.x;
+        const dz=npc.position.z-b.position.z;
+        if(dx*dx+dz*dz<36){ // 6m radius
+          sendNPCToSleep(npc);
+        }
+      }
       scene.remove(b);
       paintBombs.splice(i,1);
     }
@@ -2752,6 +2915,13 @@ function updatePaintballs(dt){
       }
     }
     if(hitV)continue;
+    // NPC collision
+    const hitNPC=checkNPCHit(nx,ny,nz,0.15);
+    if(hitNPC){
+      createSplat(hitNPC.position.x,hitNPC.position.y+0.8,hitNPC.position.z,b.userData.color,'wall');
+      sendNPCToSleep(hitNPC);
+      recycleBall(b,i);continue;
+    }
     b.position.set(nx,ny,nz);
   }
 }
@@ -3165,7 +3335,10 @@ function gameLoop(){
         }
         setTimeout(()=>setS(''),2000);
       }
-      camTarget=player.position.clone().add(new THREE.Vector3(0,4,0));
+      camTarget=player.position.clone().add(new THREE.Vector3(0,2,0));
+      // Camera follows behind flight direction
+      yaw=player.rotation.y+Math.PI;
+      pitch=0.3; // Look slightly down at player
     }else{
       // Hide flight gear when walking
       if(wingsuitMesh)wingsuitMesh.visible=false;
@@ -3233,6 +3406,8 @@ function gameLoop(){
   if(paintMode)updatePaintballs(dt);
   // Paint bombs (from airplane)
   if(paintBombs.length)updatePaintBombs(dt);
+  // Update NPCs
+  updateNPCs(dt);
   // Track velocity for predictive chunk loading (uses tgt from address detection above)
   if(tgt){
     const vx=(tgt.position.x-lastPosX)/dt,vz=(tgt.position.z-lastPosZ)/dt;
@@ -3283,6 +3458,7 @@ async function startGame(){
     try{mapillaryData=await fetchMapillaryFeatures()}catch(e){console.warn('Mapillary fetch failed:',e)}
     buildWorld(osm,mapillaryData);
     setS('Spawning vehicles...');setP(90);spawnVehicles();
+    setS('Spawning NPCs...');spawnNPCs();updateNPCCounter();
     // Auto-load most recent edits for this location if not already loaded
     if(!userEdits.length){
       try{
