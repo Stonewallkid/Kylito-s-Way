@@ -286,7 +286,7 @@ const BALL_POOL_SIZE=50,SPLAT_POOL_SIZE=350;
 const PAINT_SPEED=50,PAINT_GRAV=-25,PAINT_COLORS=['#ff3366','#33ff66','#3366ff','#ffff33','#ff66ff','#ff8800','#00ffff','#ffffff'];
 const CAR_COLORS=[0xf0f0f0,0xe8e8e8,0x1a1a1a,0x111111,0x888888,0x999999,0x666666,0x771111,0xbb2222,0x112266,0x1144aa,0x114411,0x665522,0xaa8844,0xddddcc];
 // ═══ CACHING SYSTEM ═══
-const CACHE_VERSION=16,CACHE_EXPIRY=7*24*60*60*1000; // 7 days - v16: fix elevation clamping
+const CACHE_VERSION=17,CACHE_EXPIRY=7*24*60*60*1000; // 7 days - v17: gentler terrain ±5m
 function getCacheKey(type,lat,lon){return`kw_${type}_${lat.toFixed(4)}_${lon.toFixed(4)}_v${CACHE_VERSION}`}
 function getCache(key){
   try{
@@ -851,8 +851,8 @@ async function fetchElevation(){
   const rawMin=Math.min(...elevs),rawMax=Math.max(...elevs);
   console.log('Raw elevation:',rawMin.toFixed(1)+' to '+rawMax.toFixed(1)+'m');
 
-  // Clamp to reasonable range (±30m ≈ ±100ft from spawn)
-  elevs=elevs.map(e=>Math.max(-30,Math.min(30,e)));
+  // Clamp to gentle range (±5m ≈ ±16ft from spawn) - prevents broken glass terrain
+  elevs=elevs.map(e=>Math.max(-5,Math.min(5,e)));
 
   terrainElevs=elevs;
   // Save to cache
@@ -2741,12 +2741,34 @@ function respawn(){
     player.position.set(spawnX,getTerrainY(spawnX,spawnZ)+0.15,spawnZ);
     velY=0;
     drownTimer=0;
+    // Clear flight state
+    player.userData.wingsuit=false;
+    player.userData.parachute=false;
+    player.userData.hasChute=false;
+    if(wingsuitMesh)wingsuitMesh.visible=false;
+    if(parachuteMesh)parachuteMesh.visible=false;
+    player.quaternion.identity();
+    player.rotation.set(0,0,0);
+    player.visible=true;
   }
-  setS('You drowned! Respawned.');
+  setS('Respawned!');
   setTimeout(()=>setS(''),2000);
 }
 function findNearest(){if(!player)return null;let b=null,bd=ENTER_DIST**2;for(const v of vehicles){const d=(v.position.x-player.position.x)**2+(v.position.z-player.position.z)**2;if(d<bd){bd=d;b=v}}return b}
-function enterV(v){activeVehicle=v;player.visible=v.userData.isAircraft?true:false;carAccelInput=0;carBrakeInput=0;document.getElementById('speedometer').style.display='block';document.getElementById('vp').style.display='none';if(v.userData.isAircraft)player.userData.hasChute=true;if(isMobile)updateBtns()}
+function enterV(v){
+  activeVehicle=v;
+  player.visible=v.userData.isAircraft?true:false;
+  carAccelInput=0;carBrakeInput=0;
+  document.getElementById('speedometer').style.display='block';
+  document.getElementById('vp').style.display='none';
+  // Clear any flight state and hide meshes
+  player.userData.wingsuit=false;
+  player.userData.parachute=false;
+  if(wingsuitMesh)wingsuitMesh.visible=false;
+  if(parachuteMesh)parachuteMesh.visible=false;
+  if(v.userData.isAircraft)player.userData.hasChute=true;
+  if(isMobile)updateBtns();
+}
 function exitV(){
   if(!activeVehicle)return;
   const v=activeVehicle;
