@@ -1527,8 +1527,8 @@ async function loadChunk(cx,cz){
 
   try{
     const center=chunkToLatLon(cx,cz);
-    // Fetch elevation and OSM in parallel
-    const elevPromise=fetchChunkElevation(cx,cz,chunk);
+    // DISABLED: Chunk elevation causes rate limiting - use main terrain instead
+    // const elevPromise=fetchChunkElevation(cx,cz,chunk);
     const deg=CHUNK_SIZE/111320*0.6;
     const bb=(center.lat-deg)+','+(center.lon-deg)+','+(center.lat+deg)+','+(center.lon+deg);
     const q='[out:json][timeout:30];(way["building"]('+bb+');way["highway"]('+bb+');way["natural"="water"]('+bb+');way["water"]('+bb+');way["waterway"]('+bb+');way["leisure"="park"]('+bb+');way["barrier"]('+bb+');node["natural"="tree"]('+bb+'););out body;>;out skel qt;';
@@ -1537,9 +1537,9 @@ async function loadChunk(cx,cz){
     for(const u of urls){
       try{const r=await cfetch(u,{method:'POST',body:'data='+encodeURIComponent(q)});osm=await r.json();break}catch(e){continue}
     }
-    await elevPromise;
-    // Build terrain mesh first
-    buildChunkTerrain(chunk);
+    // await elevPromise; // DISABLED - causes rate limiting
+    // Build terrain mesh first (disabled - causes issues)
+    // buildChunkTerrain(chunk);
     if(osm)buildChunk(chunk,osm,center);
     chunk.loading=false;chunk.loaded=true;
     updateChunkStatus();
