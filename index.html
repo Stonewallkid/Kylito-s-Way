@@ -71,6 +71,8 @@ button,input,select,textarea{font-family:inherit}
 #vp{position:fixed;bottom:130px;left:50%;transform:translateX(-50%);font-family:'Orbitron',sans-serif;font-size:.55rem;letter-spacing:.06em;color:rgba(0,255,170,.8);background:rgba(0,0,0,.6);border:1px solid rgba(0,255,170,.25);border-radius:6px;padding:5px 12px;pointer-events:none;display:none;z-index:70;white-space:nowrap}
 #speedometer{position:fixed;bottom:max(16px,env(safe-area-inset-bottom,8px));left:50%;transform:translateX(-50%);font-family:'Orbitron',sans-serif;font-size:1rem;color:rgba(0,200,255,.7);display:none;z-index:70;pointer-events:none}
 #speedometer .unit{font-size:.45rem;color:rgba(0,200,255,.35)}
+#altimeter{position:fixed;bottom:max(50px,calc(env(safe-area-inset-bottom,8px)+34px));left:50%;transform:translateX(-50%);font-family:'Orbitron',sans-serif;font-size:1.2rem;color:rgba(255,200,0,.85);display:none;z-index:70;pointer-events:none;text-shadow:0 0 10px rgba(255,150,0,.5)}
+#altimeter .unit{font-size:.5rem;color:rgba(255,200,0,.5)}
 
 #edit-bar{position:fixed;top:max(38px,calc(env(safe-area-inset-top,6px)+30px));left:50%;transform:translateX(-50%);display:none;gap:3px;pointer-events:auto;z-index:80;background:rgba(0,0,0,.75);border:1px solid rgba(255,170,0,.2);border-radius:8px;padding:5px 7px;align-items:center;flex-wrap:wrap;justify-content:center;max-width:96%}
 .eb{padding:4px 8px;font-family:'Orbitron',sans-serif;font-size:.42rem;border-radius:4px;cursor:pointer;border:1px solid rgba(255,170,0,.2);background:rgba(255,170,0,.06);color:rgba(255,170,0,.6);white-space:nowrap;-webkit-tap-highlight-color:transparent}
@@ -240,6 +242,7 @@ button,input,select,textarea{font-family:inherit}
 
 <div id="vp"></div>
 <div id="speedometer"><span id="spd-val">0</span> <span class="unit">MPH</span></div>
+<div id="altimeter">ALT <span id="alt-val">0</span><span class="unit">m</span></div>
 <canvas id="gc"></canvas>
 <input type="file" id="file-input" accept=".json" style="display:none"/>
 
@@ -3202,11 +3205,16 @@ function gameLoop(){
       // Spin propeller based on speed
       if(v.userData.propeller)v.userData.propeller.rotation.z+=spd*0.3;
 
-      // Speedometer shows airspeed in mph
+      // Speedometer shows airspeed in mph, altimeter shows height
       document.getElementById('spd-val').textContent=Math.abs(spd*2.237).toFixed(0);
+      const altEl=document.getElementById('altimeter');
+      altEl.style.display='block';
+      document.getElementById('alt-val').textContent=Math.round(v.position.y);
       camTarget=v.position.clone().add(new THREE.Vector3(0,2,0));
       yaw=angle+Math.PI;
     }else{
+      // Ground vehicle - hide altimeter
+      document.getElementById('altimeter').style.display='none';
     // GROUND VEHICLE PHYSICS
     let spd=v.userData.speed;
     // Initialize drift angle if not set
@@ -3311,8 +3319,10 @@ function gameLoop(){
         player.position.z+=Math.cos(ws.glideAngle)*horizSpeed*dt;
         player.position.y+=vertSpeed*dt;
 
-        // Player faces flight direction, pitched appropriately
-        player.rotation.set(-ws.glidePitch-0.3,ws.glideAngle,0);
+        // Player flies face-down (Superman pose) in flight direction
+        // rotation order: first pitch forward to horizontal, then yaw to face direction
+        player.rotation.order='YXZ';
+        player.rotation.set(-Math.PI/2-ws.glidePitch,ws.glideAngle,0);
 
         // Show wingsuit, hide parachute (attached to player)
         if(parachuteMesh)parachuteMesh.visible=false;
@@ -3329,7 +3339,9 @@ function gameLoop(){
         ws.glideSpeed=undefined;
         ws.glidePitch=undefined;
         ws.glideAngle=undefined;
+        player.rotation.order='XYZ'; // Reset rotation order
         player.rotation.set(0,yaw,0);
+        document.getElementById('altimeter').style.display='none';
         if(wingsuitMesh)wingsuitMesh.visible=false;
         if(parachuteMesh)parachuteMesh.visible=false;
         setS(wasChute?'Landed safely!':'Rough landing!');
@@ -3340,7 +3352,14 @@ function gameLoop(){
       camTarget=player.position.clone().add(new THREE.Vector3(0,3,0));
       yaw=ws.glideAngle+Math.PI;
       pitch=0.2;
+
+      // Show altimeter
+      const altEl=document.getElementById('altimeter');
+      altEl.style.display='block';
+      document.getElementById('alt-val').textContent=Math.round(player.position.y);
     }else{
+      // Hide altimeter when not flying
+      document.getElementById('altimeter').style.display='none';
       // Hide flight gear when walking
       if(wingsuitMesh)wingsuitMesh.visible=false;
       if(parachuteMesh)parachuteMesh.visible=false;
