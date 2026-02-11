@@ -286,7 +286,7 @@ const BALL_POOL_SIZE=50,SPLAT_POOL_SIZE=350;
 const PAINT_SPEED=50,PAINT_GRAV=-25,PAINT_COLORS=['#ff3366','#33ff66','#3366ff','#ffff33','#ff66ff','#ff8800','#00ffff','#ffffff'];
 const CAR_COLORS=[0xf0f0f0,0xe8e8e8,0x1a1a1a,0x111111,0x888888,0x999999,0x666666,0x771111,0xbb2222,0x112266,0x1144aa,0x114411,0x665522,0xaa8844,0xddddcc];
 // ═══ CACHING SYSTEM ═══
-const CACHE_VERSION=15,CACHE_EXPIRY=7*24*60*60*1000; // 7 days - v15: airplane with glider physics
+const CACHE_VERSION=16,CACHE_EXPIRY=7*24*60*60*1000; // 7 days - v16: fix elevation clamping
 function getCacheKey(type,lat,lon){return`kw_${type}_${lat.toFixed(4)}_${lon.toFixed(4)}_v${CACHE_VERSION}`}
 function getCache(key){
   try{
@@ -847,63 +847,12 @@ async function fetchElevation(){
   terrainMinElev=centerElev; // Store for chunk normalization
   let elevs=allElevs.map(e=>e-centerElev);
 
-  // Apply smoothing to reduce harsh terrain steps
-  const rawMin=Math.min(...elevs),rawMax=Math.max(...elevs),rawSpread=rawMax-rawMin;
-  console.log('Raw elevation spread:',rawSpread.toFixed(1)+'m, min:',rawMin.toFixed(1),'max:',rawMax.toFixed(1));
+  // Simple elevation clamping - prevent extreme values
+  const rawMin=Math.min(...elevs),rawMax=Math.max(...elevs);
+  console.log('Raw elevation:',rawMin.toFixed(1)+' to '+rawMax.toFixed(1)+'m');
 
-  // Box filter smoothing - average with neighbors (3 passes)
-  function smoothPass(arr,N){
-    const out=new Array(N*N);
-    for(let r=0;r<N;r++){
-      for(let c=0;c<N;c++){
-        let sum=0,cnt=0;
-        for(let dr=-1;dr<=1;dr++){
-          for(let dc=-1;dc<=1;dc++){
-            const nr=r+dr,nc=c+dc;
-            if(nr>=0&&nr<N&&nc>=0&&nc<N){
-              sum+=arr[nr*N+nc];cnt++;
-            }
-          }
-        }
-        out[r*N+c]=sum/cnt;
-      }
-    }
-    return out;
-  }
-  // Apply 3 smoothing passes
-  elevs=smoothPass(elevs,N);
-  elevs=smoothPass(elevs,N);
-  elevs=smoothPass(elevs,N);
-
-  // Slope limiter - prevent extreme cliffs
-  const maxSlope=8; // Max elevation change per grid cell (meters)
-  const cellSize=terrainSize/(N-1);
-  for(let pass=0;pass<2;pass++){
-    for(let r=0;r<N;r++){
-      for(let c=0;c<N;c++){
-        const idx=r*N+c;
-        const curr=elevs[idx];
-        // Check neighbors and limit slope
-        if(c>0){
-          const diff=curr-elevs[idx-1];
-          if(Math.abs(diff)>maxSlope)elevs[idx]=elevs[idx-1]+(diff>0?maxSlope:-maxSlope);
-        }
-        if(r>0){
-          const diff=elevs[idx]-elevs[(r-1)*N+c];
-          if(Math.abs(diff)>maxSlope)elevs[idx]=elevs[(r-1)*N+c]+(diff>0?maxSlope:-maxSlope);
-        }
-      }
-    }
-  }
-
-  const smoothMin=Math.min(...elevs),smoothMax=Math.max(...elevs);
-  console.log('Smoothed elevation:',smoothMin.toFixed(1)+' to '+smoothMax.toFixed(1)+'m');
-
-  // Clamp elevation to reasonable range (most neighborhoods are fairly flat)
-  const MAX_ELEV=30;  // Max 30m above spawn
-  const MIN_ELEV=-30; // Max 30m below spawn
-  elevs=elevs.map(e=>Math.max(MIN_ELEV,Math.min(MAX_ELEV,e)));
-  console.log('Clamped elevation to ±30m range');
+  // Clamp to reasonable range (±30m ≈ ±100ft from spawn)
+  elevs=elevs.map(e=>Math.max(-30,Math.min(30,e)));
 
   terrainElevs=elevs;
   // Save to cache
