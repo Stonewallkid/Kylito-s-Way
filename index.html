@@ -2615,6 +2615,18 @@ function getBuildingRoofY(x,z){
   }
   return null;
 }
+// Check if 3D point is inside a building volume (not just footprint)
+function ptInBuilding3D(x,y,z){
+  for(const b of bData){
+    if(b.coords.length>=3&&ptInPoly(x,z,b.coords)){
+      const baseY=b.baseY||getTerrainY(x,z);
+      const roofY=baseY+b.height;
+      // Check if y is between ground and roof
+      if(y>=baseY&&y<=roofY)return true;
+    }
+  }
+  return false;
+}
 // Get the surface height (terrain or roof, whichever is higher)
 function getSurfaceY(x,z){
   const terrainY=getTerrainY(x,z);
@@ -2986,8 +2998,8 @@ function updatePaintballs(dt){
       createSplat(nx,gY+.02,nz,b.userData.color,'ground');
       recycleBall(b,i);continue;
     }
-    // Building collision
-    if(ptInBuilding(nx,nz)){
+    // Building collision - check 3D position (not just footprint)
+    if(ptInBuilding3D(nx,ny,nz)){
       createSplat(b.position.x,b.position.y,b.position.z,b.userData.color,'wall');
       recycleBall(b,i);continue;
     }
@@ -3403,6 +3415,8 @@ function gameLoop(){
       const groundY=getSurfaceY(player.position.x,player.position.z)+.15;
       if(player.position.y<=groundY){
         player.position.y=groundY;
+        velY=0; // Reset vertical velocity!
+        onGround=true; // Mark as on ground!
         const wasChute=ws.parachute;
         ws.wingsuit=false;
         ws.parachute=false;
