@@ -847,9 +847,57 @@ async function fetchElevation(){
   terrainMinElev=centerElev; // Store for chunk normalization
   let elevs=allElevs.map(e=>e-centerElev);
 
-  // No smoothing - use raw elevation data directly
+  // Apply smoothing to reduce harsh terrain steps
   const rawMin=Math.min(...elevs),rawMax=Math.max(...elevs),rawSpread=rawMax-rawMin;
   console.log('Raw elevation spread:',rawSpread.toFixed(1)+'m, min:',rawMin.toFixed(1),'max:',rawMax.toFixed(1));
+
+  // Box filter smoothing - average with neighbors (3 passes)
+  function smoothPass(arr,N){
+    const out=new Array(N*N);
+    for(let r=0;r<N;r++){
+      for(let c=0;c<N;c++){
+        let sum=0,cnt=0;
+        for(let dr=-1;dr<=1;dr++){
+          for(let dc=-1;dc<=1;dc++){
+            const nr=r+dr,nc=c+dc;
+            if(nr>=0&&nr<N&&nc>=0&&nc<N){
+              sum+=arr[nr*N+nc];cnt++;
+            }
+          }
+        }
+        out[r*N+c]=sum/cnt;
+      }
+    }
+    return out;
+  }
+  // Apply 3 smoothing passes
+  elevs=smoothPass(elevs,N);
+  elevs=smoothPass(elevs,N);
+  elevs=smoothPass(elevs,N);
+
+  // Slope limiter - prevent extreme cliffs
+  const maxSlope=8; // Max elevation change per grid cell (meters)
+  const cellSize=terrainSize/(N-1);
+  for(let pass=0;pass<2;pass++){
+    for(let r=0;r<N;r++){
+      for(let c=0;c<N;c++){
+        const idx=r*N+c;
+        const curr=elevs[idx];
+        // Check neighbors and limit slope
+        if(c>0){
+          const diff=curr-elevs[idx-1];
+          if(Math.abs(diff)>maxSlope)elevs[idx]=elevs[idx-1]+(diff>0?maxSlope:-maxSlope);
+        }
+        if(r>0){
+          const diff=elevs[idx]-elevs[(r-1)*N+c];
+          if(Math.abs(diff)>maxSlope)elevs[idx]=elevs[(r-1)*N+c]+(diff>0?maxSlope:-maxSlope);
+        }
+      }
+    }
+  }
+
+  const smoothMin=Math.min(...elevs),smoothMax=Math.max(...elevs);
+  console.log('Smoothed elevation:',smoothMin.toFixed(1)+' to '+smoothMax.toFixed(1)+'m');
 
   terrainElevs=elevs;
   // Save to cache
