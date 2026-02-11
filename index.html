@@ -2581,7 +2581,64 @@ function buildWorld(osm,mapillaryData=[]){
 
 function addTree(x,z){const s=isMobile?4:6;const ty=getTerrainY(x,z);const t=new THREE.Mesh(new THREE.CylinderGeometry(.2,.3,2,s),new THREE.MeshLambertMaterial({color:0x4a3520}));t.position.set(x,ty+1,z);scene.add(t);const c=new THREE.Mesh(new THREE.SphereGeometry(1.5+Math.random(),s,s),new THREE.MeshLambertMaterial({color:new THREE.Color().setHSL(.28+Math.random()*.08,.5,.2+Math.random()*.1)}));c.position.set(x,ty+3.5+Math.random(),z);scene.add(c)}
 function addLamp(x,z){const ty=getTerrainY(x,z);const p=new THREE.Mesh(new THREE.CylinderGeometry(.07,.07,5,4),new THREE.MeshLambertMaterial({color:0x333333}));p.position.set(x,ty+2.5,z);scene.add(p);const b=new THREE.Mesh(new THREE.SphereGeometry(.18,4,4),new THREE.MeshBasicMaterial({color:0xffcc66}));b.position.set(x,ty+5.1,z);scene.add(b);const l=new THREE.PointLight(0xffaa44,isMobile?0.3:0.5,isMobile?15:22);l.position.set(x,ty+5,z);scene.add(l)}
-function spawnVehicles(){const types=['sedan','sedan','sedan','suv','suv','truck'];let count=0;const placed=[];for(const r of rData){if(r.width<4)continue;const dx=r.p2.x-r.p1.x,dz=r.p2.z-r.p1.z,len=Math.sqrt(dx*dx+dz*dz);if(len<12)continue;for(let d=5;d<len-5;d+=22+Math.random()*15){if(Math.random()>.4)continue;const t=d/len,px=r.p1.x+dx*t,pz=r.p1.z+dz*t;let skip=false;for(const p of placed)if((p.x-px)**2+(p.z-pz)**2<36){skip=true;break}if(skip||ptInBuilding(px,pz))continue;const m=createVehicle(types[Math.floor(Math.random()*types.length)],CAR_COLORS[Math.floor(Math.random()*CAR_COLORS.length)]);const ra=Math.atan2(dx,dz),side=Math.random()>.5?1:-1;const vx=px+Math.cos(ra)*side*r.width*.35,vz=pz-Math.sin(ra)*side*r.width*.35;m.position.set(vx,getTerrainY(vx,vz)+.15,vz);m.rotation.y=ra+(Math.random()>.9?Math.PI:0);m.userData.angle=m.rotation.y;m.userData.speed=0;scene.add(m);vehicles.push(m);placed.push({x:px,z:pz});count++;if(count>(isMobile?35:70))return}}
+function spawnVehicles(){const types=['sedan','sedan','sedan','suv','suv','truck'];let count=0;const placed=[];for(const r of rData){if(r.width<4)continue;const dx=r.p2.x-r.p1.x,dz=r.p2.z-r.p1.z,len=Math.sqrt(dx*dx+dz*dz);if(len<12)continue;for(let d=5;d<len-5;d+=22+Math.random()*15){if(Math.random()>.4)continue;const t=d/len,px=r.p1.x+dx*t,pz=r.p1.z+dz*t;let skip=false;for(const p of placed)if((p.x-px)**2+(p.z-pz)**2<36){skip=true;break}if(skip||ptInBuilding(px,pz))continue;const m=createVehicle(types[Math.floor(Math.random()*types.length)],CAR_COLORS[Math.floor(Math.random()*CAR_COLORS.length)]);const ra=Math.atan2(dx,dz),side=Math.random()>.5?1:-1;const vx=px+Math.cos(ra)*side*r.width*.35,vz=pz-Math.sin(ra)*side*r.width*.35;m.position.set(vx,getTerrainY(vx,vz)+.15,vz);m.rotation.y=ra+(Math.random()>.9?Math.PI:0);m.userData.angle=m.rotation.y;m.userData.speed=0;
+    // Some cars will drive around (AI traffic)
+    if(Math.random()<0.25&&!m.userData.isAircraft){
+      m.userData.isAI=true;
+      m.userData.aiSpeed=5+Math.random()*10; // 5-15 m/s
+      m.userData.aiTurnTimer=2+Math.random()*3;
+    }
+    scene.add(m);vehicles.push(m);placed.push({x:px,z:pz});count++;if(count>(isMobile?35:70))return}}
+}
+
+// Check if point collides with any vehicle
+function ptNearVehicle(x,z,exclude){
+  for(const v of vehicles){
+    if(v===exclude||v===activeVehicle)continue;
+    const vl=v.userData.length||4,vw=v.userData.width||2;
+    const dx=x-v.position.x,dz=z-v.position.z;
+    // Rotate point into vehicle's local space
+    const angle=-v.userData.angle||0;
+    const lx=dx*Math.cos(angle)-dz*Math.sin(angle);
+    const lz=dx*Math.sin(angle)+dz*Math.cos(angle);
+    // Check if inside vehicle bounding box
+    if(Math.abs(lx)<vw/2+0.3&&Math.abs(lz)<vl/2+0.3)return v;
+  }
+  return null;
+}
+
+// Update AI driving vehicles
+function updateAIVehicles(dt){
+  for(const v of vehicles){
+    if(!v.userData.isAI||v===activeVehicle)continue;
+    // Drive forward
+    const spd=v.userData.aiSpeed;
+    const angle=v.userData.angle;
+    const nx=v.position.x+Math.sin(angle)*spd*dt;
+    const nz=v.position.z+Math.cos(angle)*spd*dt;
+    // Check for collisions with buildings or other vehicles
+    if(ptInBuilding(nx,nz)||ptNearVehicle(nx,nz,v)){
+      // Turn around
+      v.userData.angle+=Math.PI*(0.5+Math.random()*0.5);
+      v.userData.aiTurnTimer=1+Math.random()*2;
+    }else{
+      v.position.x=nx;
+      v.position.z=nz;
+      // Stay on terrain
+      v.position.y=getTerrainY(nx,nz)+0.15;
+      v.rotation.y=angle;
+    }
+    // Random turns
+    v.userData.aiTurnTimer-=dt;
+    if(v.userData.aiTurnTimer<=0){
+      v.userData.angle+=(Math.random()-0.5)*0.8;
+      v.userData.aiTurnTimer=2+Math.random()*4;
+    }
+    // Stay in world bounds
+    if(Math.abs(v.position.x)>RADIUS*0.9||Math.abs(v.position.z)>RADIUS*0.9){
+      v.userData.angle+=Math.PI;
+    }
+  }
 }
 
 // ═══ COLLISION ═══
@@ -3408,11 +3465,12 @@ function gameLoop(){
         player.position.z+=Math.cos(ws.glideAngle)*horizSpeed*dt;
         player.position.y+=vertSpeed*dt;
 
-        // Player flies face-down (Superman pose) in flight direction
-        player.rotation.order='XYZ';
-        player.rotation.x=-0.8-ws.glidePitch; // Tilt forward (not fully horizontal)
-        player.rotation.y=ws.glideAngle;
-        player.rotation.z=0;
+        // Player flies prone (Superman pose) facing flight direction
+        player.rotation.set(0,ws.glideAngle,0); // Face flight direction
+        // Then tilt forward using quaternion for proper prone position
+        const tiltQ=new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1,0,0),-1.3-ws.glidePitch);
+        const yawQ=new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0,1,0),ws.glideAngle);
+        player.quaternion.copy(yawQ.multiply(tiltQ));
 
         // Show wingsuit, hide parachute (attached to player)
         if(parachuteMesh)parachuteMesh.visible=false;
@@ -3463,10 +3521,12 @@ function gameLoop(){
     // Check if we're on a rooftop (above ground level)
     const currentRoofY=getBuildingRoofY(player.position.x,player.position.z);
     const onRoof=currentRoofY!==null&&player.position.y>currentRoofY-0.5;
-    // If on roof, allow walking freely. If on ground, block buildings.
-    if(onRoof||!ptInBuilding(nx,nz)){player.position.x=nx;player.position.z=nz}
-    else if(!ptInBuilding(nx,player.position.z))player.position.x=nx;
-    else if(!ptInBuilding(player.position.x,nz))player.position.z=nz;
+    // Check for collision with buildings AND vehicles
+    const blockedByBuilding=!onRoof&&ptInBuilding(nx,nz);
+    const blockedByVehicle=ptNearVehicle(nx,nz,null);
+    if(!blockedByBuilding&&!blockedByVehicle){player.position.x=nx;player.position.z=nz}
+    else if(!ptInBuilding(nx,player.position.z)&&!ptNearVehicle(nx,player.position.z,null))player.position.x=nx;
+    else if(!ptInBuilding(player.position.x,nz)&&!ptNearVehicle(player.position.x,nz,null))player.position.z=nz;
     if(im>.1){
       let ty=Math.atan2(dir.x,dir.z),df=ty-player.rotation.y;while(df>Math.PI)df-=Math.PI*2;while(df<-Math.PI)df+=Math.PI*2;player.rotation.y+=df*.15;
       camYawTarget=player.rotation.y+Math.PI;
@@ -3567,6 +3627,8 @@ function gameLoop(){
   if(paintBombs.length)updatePaintBombs(dt);
   // Update NPCs
   updateNPCs(dt);
+  // Update AI driving vehicles
+  updateAIVehicles(dt);
   // Track velocity for predictive chunk loading (uses tgt from address detection above)
   if(tgt){
     const vx=(tgt.position.x-lastPosX)/dt,vz=(tgt.position.z-lastPosZ)/dt;
