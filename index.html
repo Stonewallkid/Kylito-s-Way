@@ -3081,10 +3081,10 @@ function gameLoop(){
     velY+=GRAV*dt;player.position.y+=velY*dt;
     const groundY=getTerrainY(player.position.x,player.position.z)+.15;
     if(player.position.y<=groundY){player.position.y=groundY;velY=0;onGround=true}
+    animChar(dt,im*spd);
     }
     // Drowning check
     if(checkDrowning(player.position.x,player.position.y,player.position.z)){respawn()}
-    animChar(dt,im*spd);
     if(!editMode){const nv=findNearest();const vp=document.getElementById('vp');
       if(nv){vp.textContent=isMobile?nv.userData.type+' — tap CAR':'Press E → '+nv.userData.type;vp.style.display='block';if(isMobile){const cb=document.getElementById('mb-car');if(cb){cb.style.display='flex';cb.ontouchstart=e=>{e.preventDefault();enterV(nv)}}}}
       else{vp.style.display='none';if(isMobile){const cb=document.getElementById('mb-car');if(cb)cb.style.display='none'}}}
