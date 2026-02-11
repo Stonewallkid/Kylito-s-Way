@@ -280,7 +280,7 @@ let paintMode=false,paintColor='#ff3366',paintBalls=[],paintSplats=[];
 // Object pools for performance
 const ballPool=[],splatPool=[];
 const BALL_POOL_SIZE=50,SPLAT_POOL_SIZE=350;
-const PAINT_SPEED=120,PAINT_GRAV=-6,PAINT_COLORS=['#ff3366','#33ff66','#3366ff','#ffff33','#ff66ff','#ff8800','#00ffff','#ffffff'];
+const PAINT_SPEED=50,PAINT_GRAV=-25,PAINT_COLORS=['#ff3366','#33ff66','#3366ff','#ffff33','#ff66ff','#ff8800','#00ffff','#ffffff'];
 const CAR_COLORS=[0xf0f0f0,0xe8e8e8,0x1a1a1a,0x111111,0x888888,0x999999,0x666666,0x771111,0xbb2222,0x112266,0x1144aa,0x114411,0x665522,0xaa8844,0xddddcc];
 // ═══ CACHING SYSTEM ═══
 const CACHE_VERSION=15,CACHE_EXPIRY=7*24*60*60*1000; // 7 days - v15: airplane with glider physics
@@ -2387,7 +2387,7 @@ function respawn(){
   setTimeout(()=>setS(''),2000);
 }
 function findNearest(){if(!player)return null;let b=null,bd=ENTER_DIST**2;for(const v of vehicles){const d=(v.position.x-player.position.x)**2+(v.position.z-player.position.z)**2;if(d<bd){bd=d;b=v}}return b}
-function enterV(v){activeVehicle=v;player.visible=false;carAccelInput=0;carBrakeInput=0;document.getElementById('speedometer').style.display='block';document.getElementById('vp').style.display='none';if(isMobile)updateBtns()}
+function enterV(v){activeVehicle=v;player.visible=v.userData.isAircraft?true:false;carAccelInput=0;carBrakeInput=0;document.getElementById('speedometer').style.display='block';document.getElementById('vp').style.display='none';if(isMobile)updateBtns()}
 function exitV(){if(!activeVehicle)return;const a=activeVehicle.rotation.y;let ex=activeVehicle.position.x+Math.cos(a)*3,ez=activeVehicle.position.z-Math.sin(a)*3;if(ptInBuilding(ex,ez)){ex=activeVehicle.position.x-Math.cos(a)*3;ez=activeVehicle.position.z+Math.sin(a)*3}player.position.set(ex,getTerrainY(ex,ez)+.15,ez);player.visible=true;activeVehicle.userData.speed=0;activeVehicle=null;document.getElementById('speedometer').style.display='none';if(isMobile)updateBtns()}
 
 // ═══ INIT ═══
@@ -2818,11 +2818,11 @@ function gameLoop(){
 
     // AIRPLANE PHYSICS - realistic flight model
     if(v.userData.isAircraft){
-      const THRUST=6;        // Weak engine - can barely maintain level flight
-      const DRAG=0.02;       // Air resistance
-      const GRAVITY=20;      // Pulls plane down
-      const PITCH_RATE=1.2;  // How fast plane pitches
-      const TURN_RATE=1.0;   // How fast plane turns
+      const THRUST=5;        // Weak engine - can barely maintain level flight
+      const DRAG=0.015;      // Air resistance (less drag = keep speed longer)
+      const GRAVITY=15;      // Pulls plane down (reduced for better climbing)
+      const PITCH_RATE=1.5;  // How fast plane pitches
+      const TURN_RATE=1.2;   // How fast plane turns
 
       let spd=v.userData.speed||8;
       let pitch=v.userData.pitch||0;  // Nose angle: negative=up, positive=down
@@ -2895,6 +2895,14 @@ function gameLoop(){
       v.userData.pitch=pitch;
       v.userData.angle=angle;
       v.rotation.set(pitch,angle,roll);
+
+      // Position player riding on top of plane (broomstick style!)
+      if(player&&player.visible){
+        player.position.copy(v.position);
+        player.position.y+=0.8; // Sit on top
+        player.rotation.y=angle;
+        player.rotation.x=pitch*0.5; // Lean with plane
+      }
 
       // Spin propeller based on speed
       if(v.userData.propeller)v.userData.propeller.rotation.z+=spd*0.3;
