@@ -1989,6 +1989,67 @@ function createParachuteMesh(){
   parachuteMesh=g;
 }
 
+// ═══ JETPACK ═══
+let jetpackMesh=null;
+const JETPACK_MAX_FUEL=9; // 9 seconds of fuel
+let jetpackFuel=JETPACK_MAX_FUEL;
+let jetpackActive=false;
+let jetpackVelY=0;
+
+function createJetpackMesh(){
+  if(jetpackMesh||!player)return;
+  const g=new THREE.Group();
+  const metalMat=new THREE.MeshLambertMaterial({color:0x555566});
+  const redMat=new THREE.MeshLambertMaterial({color:0xcc2222});
+  // Main tank (backpack)
+  const tank=new THREE.Mesh(new THREE.CylinderGeometry(0.15,0.15,0.5,8),metalMat);
+  tank.position.set(-0.1,1.1,-0.25);
+  g.add(tank);
+  const tank2=new THREE.Mesh(new THREE.CylinderGeometry(0.15,0.15,0.5,8),metalMat);
+  tank2.position.set(0.1,1.1,-0.25);
+  g.add(tank2);
+  // Nozzles
+  const nozzle1=new THREE.Mesh(new THREE.ConeGeometry(0.08,0.15,6),redMat);
+  nozzle1.position.set(-0.1,0.8,-0.25);
+  nozzle1.rotation.x=Math.PI;
+  g.add(nozzle1);
+  const nozzle2=new THREE.Mesh(new THREE.ConeGeometry(0.08,0.15,6),redMat);
+  nozzle2.position.set(0.1,0.8,-0.25);
+  nozzle2.rotation.x=Math.PI;
+  g.add(nozzle2);
+  // Flame effect (hidden when not thrusting)
+  const flameMat=new THREE.MeshBasicMaterial({color:0xff6600,transparent:true,opacity:0.8});
+  g.flame1=new THREE.Mesh(new THREE.ConeGeometry(0.06,0.3,6),flameMat);
+  g.flame1.position.set(-0.1,0.55,-0.25);
+  g.flame1.rotation.x=Math.PI;
+  g.flame1.visible=false;
+  g.add(g.flame1);
+  g.flame2=new THREE.Mesh(new THREE.ConeGeometry(0.06,0.3,6),flameMat);
+  g.flame2.position.set(0.1,0.55,-0.25);
+  g.flame2.rotation.x=Math.PI;
+  g.flame2.visible=false;
+  g.add(g.flame2);
+  player.add(g);
+  jetpackMesh=g;
+}
+
+function updateJetpackHUD(){
+  let hud=document.getElementById('jetpack-hud');
+  if(!hud){
+    hud=document.createElement('div');
+    hud.id='jetpack-hud';
+    hud.style.cssText='position:fixed;bottom:90px;left:50%;transform:translateX(-50%);font:bold 12px Orbitron,monospace;color:#ff6600;text-shadow:0 0 5px #000;z-index:100;display:none;';
+    hud.innerHTML='<div style="width:100px;height:8px;background:rgba(0,0,0,0.5);border:1px solid #ff6600;border-radius:4px;overflow:hidden;"><div id="fuel-bar" style="height:100%;background:linear-gradient(90deg,#ff6600,#ffaa00);transition:width 0.1s;"></div></div><div style="text-align:center;margin-top:2px;">FUEL</div>';
+    document.body.appendChild(hud);
+  }
+  if(player&&(jetpackActive||jetpackFuel<JETPACK_MAX_FUEL)){
+    hud.style.display='block';
+    document.getElementById('fuel-bar').style.width=(jetpackFuel/JETPACK_MAX_FUEL*100)+'%';
+  }else{
+    hud.style.display='none';
+  }
+}
+
 // ═══ NPCs ═══
 const npcs=[];
 let npcsSentHome=0;
@@ -2642,12 +2703,19 @@ function exitV(){
 // Paint bomb from plane
 let paintBombs=[];
 function dropPaintBomb(){
-  if(!activeVehicle||!activeVehicle.userData.isAircraft)return;
+  // Drop from aircraft OR jetpack
+  let dropPos=null;
+  if(activeVehicle&&activeVehicle.userData.isAircraft){
+    dropPos=activeVehicle.position.clone();
+  }else if(jetpackActive&&player&&!onGround){
+    dropPos=player.position.clone();
+  }
+  if(!dropPos)return;
   const bomb=new THREE.Mesh(
     new THREE.SphereGeometry(0.3,6,6),
     new THREE.MeshLambertMaterial({color:new THREE.Color(paintColor)})
   );
-  bomb.position.copy(activeVehicle.position);
+  bomb.position.copy(dropPos);
   bomb.position.y-=1;
   bomb.userData={velY:0,color:paintColor};
   scene.add(bomb);
@@ -2706,6 +2774,8 @@ function setupDesktop(){
     if(e.code==='Escape'){if(mmExpanded)toggleMinimap();if(selectedEdit||selectedVehicle)deselectEdit();return}
     if(e.code==='KeyM'){toggleMinimap();return}
     if(e.code==='KeyP'){togglePaintball();return}
+    if(e.code==='KeyJ'){jetpackActive=!jetpackActive;setS(jetpackActive?'Jetpack ON! Hold SHIFT to fly':'Jetpack OFF');setTimeout(()=>setS(''),2000);return}
+    if(e.code==='KeyB'&&jetpackActive&&!onGround){dropPaintBomb();return}
     if(e.code==='F3'){e.preventDefault();document.getElementById('debug-panel').classList.toggle('show');return}
     if(e.code==='Tab'){e.preventDefault();toggleEdit();return}
     if(e.code==='KeyE'||e.code==='KeyF'){if(activeVehicle)exitV();else{const v=findNearest();if(v)enterV(v)}return}
@@ -3358,12 +3428,11 @@ function gameLoop(){
       altEl.style.display='block';
       document.getElementById('alt-val').textContent=Math.round(player.position.y);
     }else{
-      // Hide altimeter when not flying
-      document.getElementById('altimeter').style.display='none';
-      // Hide flight gear when walking
+      // Hide flight gear when walking/jetpacking
       if(wingsuitMesh)wingsuitMesh.visible=false;
       if(parachuteMesh)parachuteMesh.visible=false;
-    // NORMAL WALKING
+
+    // JETPACK OR NORMAL WALKING
     const dir=new THREE.Vector3();if(mF)dir.z-=1;if(mB)dir.z+=1;if(mL)dir.x-=1;if(mR)dir.x+=1;
     if(Math.abs(joyVec.x)>.1||Math.abs(joyVec.y)>.1){dir.x+=joyVec.x;dir.z+=joyVec.y}
     const im=dir.length();if(im>0)dir.normalize();dir.applyAxisAngle(new THREE.Vector3(0,1,0),yaw);
@@ -3378,18 +3447,62 @@ function gameLoop(){
     else if(!ptInBuilding(player.position.x,nz))player.position.z=nz;
     if(im>.1){
       let ty=Math.atan2(dir.x,dir.z),df=ty-player.rotation.y;while(df>Math.PI)df-=Math.PI*2;while(df<-Math.PI)df+=Math.PI*2;player.rotation.y+=df*.15;
-      // AUTO-FOLLOW: camera swings behind player when moving
       camYawTarget=player.rotation.y+Math.PI;
       camAutoFollow=true;
     }
-    // Smoothly rotate camera to follow player facing
     if(camAutoFollow&&!activeVehicle){
       let df=camYawTarget-yaw;while(df>Math.PI)df-=Math.PI*2;while(df<-Math.PI)df+=Math.PI*2;
-      yaw+=df*.04; // gentle follow
+      yaw+=df*.04;
     }
-    velY+=GRAV*dt;player.position.y+=velY*dt;
+
+    // JETPACK PHYSICS
+    if(jetpackActive&&jetpackFuel>0&&sprinting){
+      // Holding Shift = thrust!
+      jetpackFuel-=dt;
+      if(jetpackFuel<0)jetpackFuel=0;
+      velY+=35*dt; // Strong upward thrust
+      velY=Math.min(velY,15); // Cap upward speed
+      if(jetpackMesh){jetpackMesh.flame1.visible=true;jetpackMesh.flame2.visible=true;}
+    }else{
+      if(jetpackMesh){jetpackMesh.flame1.visible=false;jetpackMesh.flame2.visible=false;}
+    }
+
+    // Gravity
+    velY+=GRAV*dt;
+    player.position.y+=velY*dt;
+
     const groundY=getSurfaceY(player.position.x,player.position.z)+.15;
-    if(player.position.y<=groundY){player.position.y=groundY;velY=0;onGround=true}
+    if(player.position.y<=groundY){
+      // HARD LANDING CHECK
+      if(velY<-20){
+        // Too fast! Reset to home
+        setS('CRASH! Too hard a landing...');
+        setTimeout(()=>{respawn();setS('');},1000);
+        velY=0;
+        player.position.y=groundY;
+      }else{
+        player.position.y=groundY;
+        velY=0;
+        // Recharge jetpack fuel on ground
+        if(jetpackFuel<JETPACK_MAX_FUEL){
+          jetpackFuel+=dt*0.5; // Slow recharge
+          if(jetpackFuel>JETPACK_MAX_FUEL)jetpackFuel=JETPACK_MAX_FUEL;
+        }
+      }
+      onGround=true;
+    }else{
+      onGround=false;
+    }
+
+    // Show altimeter and fuel when jetpacking in air
+    if(jetpackActive&&!onGround){
+      document.getElementById('altimeter').style.display='block';
+      document.getElementById('alt-val').textContent=Math.round(player.position.y);
+    }else if(!player.userData.wingsuit&&!player.userData.parachute){
+      document.getElementById('altimeter').style.display='none';
+    }
+    updateJetpackHUD();
+
     animChar(dt,im*spd);
     }
     // Drowning check
@@ -3500,7 +3613,7 @@ async function startGame(){
     if(userEdits.length){setS('Applying edits...');applyUserEdits()}
     // Snap spawn to nearest road so player doesn't start in a building
     snapSpawnToRoad();
-    createCharacter();createWingsuitMesh();createParachuteMesh();setP(100);
+    createCharacter();createWingsuitMesh();createParachuteMesh();createJetpackMesh();setP(100);
     // Place player at terrain height
     if(player)player.position.y=getTerrainY(player.position.x,player.position.z)+.15;
     // Spawn airplane next to player
