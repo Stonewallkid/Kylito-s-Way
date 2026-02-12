@@ -1580,7 +1580,7 @@ function buildChunk(chunk,osm,center){
     const coords=way.nodes.map(n=>nodes[n]).filter(Boolean).map(n=>toWorld(n.lat,n.lon));
     if(coords.length<2)return;
 
-    if(tags.building){
+    if(tags.building&&tags.building!=='no'){
       // Skip planned/proposed/construction buildings that don't exist yet
       const bt=tags.building;
       if(bt==='planned'||bt==='proposed'||bt==='construction'||tags['building:status']==='planned'||tags['building:status']==='proposed')return;
@@ -2561,7 +2561,7 @@ function buildWorld(osm,mapillaryData=[]){
       return;
     }
 
-    if(tags.building){
+    if(tags.building&&tags.building!=='no'){
       // Skip planned/proposed/construction buildings that don't exist yet
       const bt=tags.building;
       if(bt==='planned'||bt==='proposed'||bt==='construction'||tags['building:status']==='planned'||tags['building:status']==='proposed')return;
