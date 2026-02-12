@@ -266,6 +266,11 @@ let minimapCtx,joyVec={x:0,y:0},lookTID=null,lookLX=0,lookLY=0;
 let vehicles=[],activeVehicle=null,carAccelInput=0,carBrakeInput=0,carEBrake=0;
 let editMode=false,editTool='select',userEdits=[],roadPoints=[],fencePoints=[],selectedEdit=null,selectedVehicle=null,selHighlight=null,moveMode=false;
 let barrierData=[];
+// Buildings to exclude (planned buildings not tagged in OSM, or incorrect data)
+// Format: {lat, lon, radius} - exclude buildings whose center is within radius meters of this point
+const BUILDING_BLACKLIST=[
+  {lat:36.0676,lon:-94.1698,radius:25}, // Planned building north of The Ramble/Powerhouse Ave
+];
 let topViewMode=false,topViewHeight=80,topViewX=0,topViewZ=0,parkingCorner=null;
 let previewMesh=null,previewActive=false;
 // Chunk streaming system
@@ -1579,6 +1584,17 @@ function buildChunk(chunk,osm,center){
       // Skip planned/proposed/construction buildings that don't exist yet
       const bt=tags.building;
       if(bt==='planned'||bt==='proposed'||bt==='construction'||tags['building:status']==='planned'||tags['building:status']==='proposed')return;
+      // Check building blacklist
+      const rawNodes=way.nodes.map(n=>nodes[n]).filter(Boolean);
+      if(rawNodes.length>0){
+        const ctrLat=rawNodes.reduce((s,n)=>s+n.lat,0)/rawNodes.length;
+        const ctrLon=rawNodes.reduce((s,n)=>s+n.lon,0)/rawNodes.length;
+        for(const bl of BUILDING_BLACKLIST){
+          const dLat=(ctrLat-bl.lat)*111320;
+          const dLon=(ctrLon-bl.lon)*111320*Math.cos(ctrLat*Math.PI/180);
+          if(Math.sqrt(dLat*dLat+dLon*dLon)<bl.radius)return;
+        }
+      }
 
       const cx=coords.reduce((s,c)=>s+c.x,0)/coords.length;
       const cz=coords.reduce((s,c)=>s+c.z,0)/coords.length;
@@ -2549,6 +2565,17 @@ function buildWorld(osm,mapillaryData=[]){
       // Skip planned/proposed/construction buildings that don't exist yet
       const bt=tags.building;
       if(bt==='planned'||bt==='proposed'||bt==='construction'||tags['building:status']==='planned'||tags['building:status']==='proposed')return;
+      // Check building blacklist (for planned buildings not properly tagged in OSM)
+      const rawNodes=way.nodes.map(n=>nodes[n]).filter(Boolean);
+      if(rawNodes.length>0){
+        const ctrLat=rawNodes.reduce((s,n)=>s+n.lat,0)/rawNodes.length;
+        const ctrLon=rawNodes.reduce((s,n)=>s+n.lon,0)/rawNodes.length;
+        for(const bl of BUILDING_BLACKLIST){
+          const dLat=(ctrLat-bl.lat)*111320;
+          const dLon=(ctrLon-bl.lon)*111320*Math.cos(ctrLat*Math.PI/180);
+          if(Math.sqrt(dLat*dLat+dLon*dLon)<bl.radius)return;
+        }
+      }
       const isRes=isResidentialArea(tags);
       // Use explicit height if available, then levels, then estimate by footprint
       const explicitH=parseFloat(tags['building:height'])||parseFloat(tags.height)||0;
