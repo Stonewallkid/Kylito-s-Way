@@ -2534,6 +2534,16 @@ const CUSTOM_BUILDINGS=[
     sign:{text:'PRELUDE',color:0x2a5a3a,y:5}  // Dark green sign
   },
   {
+    // George's Majestic Lounge - 519 W Dickson St - small music venue
+    name:"George's Majestic Lounge",
+    address:'519 W Dickson',
+    lat:36.06648,lon:-94.16580,
+    color:0xC4B8A0,       // Tan/beige brick
+    height:7,             // Small 1-2 story building
+    roofType:'flat',
+    sign:{text:'MAJESTIC',color:0x8B0000,y:6}  // Dark red sign
+  },
+  {
     // Old Main - University of Arkansas iconic Victorian building with twin towers
     name:'Old Main',
     lat:36.06870,lon:-94.17170,
@@ -3197,26 +3207,26 @@ function buildWorld(osm,mapillaryData=[]){
   // The street has been converted to an alley with food trucks
   const ftcPos=ll(36.06652,-94.16413);
   if(Math.abs(ftcPos.x)<RADIUS&&Math.abs(ftcPos.z)<RADIUS){
-    // Front row of food trucks
+    // Front row of food trucks (facing the street)
     addFoodTruck(ftcPos.x-4,ftcPos.z,0x2255aa);   // Blue
     addFoodTruck(ftcPos.x,ftcPos.z,0xcc3322);     // Red
     addFoodTruck(ftcPos.x+4,ftcPos.z,0xddaa22);   // Yellow
-    // Back row of food trucks (behind, in the alley)
-    addFoodTruck(ftcPos.x-2,ftcPos.z-8,0x22aa55);  // Green
-    addFoodTruck(ftcPos.x+2,ftcPos.z-8,0xaa5522);  // Orange
-    // Picnic tables scattered throughout the alley (between truck rows)
-    addPicnicTable(ftcPos.x-3,ftcPos.z-3);
-    addPicnicTable(ftcPos.x+1,ftcPos.z-3);
-    addPicnicTable(ftcPos.x+5,ftcPos.z-3);
-    addPicnicTable(ftcPos.x-1,ftcPos.z-5);
-    addPicnicTable(ftcPos.x+3,ftcPos.z-5);
-    addPicnicTable(ftcPos.x-4,ftcPos.z-6);
-    addPicnicTable(ftcPos.x+0,ftcPos.z-6);
-    addPicnicTable(ftcPos.x+4,ftcPos.z-6);
-    // A few more near the back trucks
-    addPicnicTable(ftcPos.x-3,ftcPos.z-10);
-    addPicnicTable(ftcPos.x+1,ftcPos.z-10);
-    addPicnicTable(ftcPos.x+5,ftcPos.z-10);
+    // Back row of food trucks (deeper in the alley - try +z direction)
+    addFoodTruck(ftcPos.x-2,ftcPos.z+8,0x22aa55);  // Green
+    addFoodTruck(ftcPos.x+2,ftcPos.z+8,0xaa5522);  // Orange
+    // Picnic tables scattered throughout the alley
+    addPicnicTable(ftcPos.x-3,ftcPos.z+3);
+    addPicnicTable(ftcPos.x+1,ftcPos.z+3);
+    addPicnicTable(ftcPos.x+5,ftcPos.z+3);
+    addPicnicTable(ftcPos.x-1,ftcPos.z+5);
+    addPicnicTable(ftcPos.x+3,ftcPos.z+5);
+    addPicnicTable(ftcPos.x-4,ftcPos.z+6);
+    addPicnicTable(ftcPos.x+0,ftcPos.z+6);
+    addPicnicTable(ftcPos.x+4,ftcPos.z+6);
+    // More near the back trucks
+    addPicnicTable(ftcPos.x-3,ftcPos.z+10);
+    addPicnicTable(ftcPos.x+1,ftcPos.z+10);
+    addPicnicTable(ftcPos.x+5,ftcPos.z+10);
   }
 
   const mapInfo=mapillaryCount>0?' · '+mapillaryCount+' street objects':'';
