@@ -1610,7 +1610,7 @@ function buildChunk(chunk,osm,center){
     }
 
     if(tags.highway&&tags.highway!=='footway'&&tags.highway!=='path'&&tags.highway!=='steps'){
-      const w=tags.highway==='primary'?14:tags.highway==='secondary'?10:tags.highway==='tertiary'?10:tags.highway==='residential'?8:6;
+      const w=['motorway','trunk','primary'].includes(tags.highway)?14:tags.highway==='secondary'?10:tags.highway==='tertiary'?10:tags.highway==='residential'?8:tags.highway==='motorway_link'?10:6;
       for(let i=0;i<coords.length-1;i++){
         const p1=coords[i],p2=coords[i+1];
         const mx=(p1.x+p2.x)/2,mz=(p1.z+p2.z)/2;
