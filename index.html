@@ -1576,6 +1576,10 @@ function buildChunk(chunk,osm,center){
     if(coords.length<2)return;
 
     if(tags.building){
+      // Skip planned/proposed/construction buildings that don't exist yet
+      const bt=tags.building;
+      if(bt==='planned'||bt==='proposed'||bt==='construction'||tags['building:status']==='planned'||tags['building:status']==='proposed')return;
+
       const cx=coords.reduce((s,c)=>s+c.x,0)/coords.length;
       const cz=coords.reduce((s,c)=>s+c.z,0)/coords.length;
       // Check if building center is actually in this chunk
@@ -2542,6 +2546,9 @@ function buildWorld(osm,mapillaryData=[]){
     }
 
     if(tags.building){
+      // Skip planned/proposed/construction buildings that don't exist yet
+      const bt=tags.building;
+      if(bt==='planned'||bt==='proposed'||bt==='construction'||tags['building:status']==='planned'||tags['building:status']==='proposed')return;
       const isRes=isResidentialArea(tags);
       // Use explicit height if available, then levels, then estimate by footprint
       const explicitH=parseFloat(tags['building:height'])||parseFloat(tags.height)||0;
