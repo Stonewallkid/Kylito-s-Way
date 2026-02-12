@@ -2927,7 +2927,12 @@ function buildWorld(osm,mapillaryData=[]){
         if(tags['addr:housenumber'])addr+=tags['addr:housenumber']+' ';
         if(tags['addr:street'])addr+=tags['addr:street'];else if(tags.name)addr=tags.name;
         if(addr.trim())buildingAddrs.push({x:cx,z:cz,addr:addr.trim(),h,name:tags.name||''});
-        if(bc%5===0&&addr.trim())makeLabel(addr.trim(),cx,ty+h+2+(isRes?h*.4+1:0),cz,20,'rgba(200,230,255,0.8)');
+        // Always label custom buildings, otherwise every 5th building
+        if(customBld&&customBld.name){
+          makeLabel(customBld.name,cx,ty+h+extraH+4,cz,22,'rgba(255,220,100,0.95)');
+        }else if(bc%5===0&&addr.trim()){
+          makeLabel(addr.trim(),cx,ty+h+2+(isRes?h*.4+1:0),cz,20,'rgba(200,230,255,0.8)');
+        }
         bc++;
       }catch(e){}
     }
