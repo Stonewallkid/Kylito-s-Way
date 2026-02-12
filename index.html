@@ -258,7 +258,7 @@ function checkWebGL(){try{const c=document.createElement('canvas');const g=c.get
 const RADIUS=400,CAM_DIST=8,CAM_LERP=.08,P_SPD=10,SPRINT=2.2,JUMP=9,GRAV=-24,MSENS=.003;
 const CAR_ACCEL=18,CAR_BRAKE=25,CAR_MAX=32,CAR_STEER=2.2,CAR_FRICTION=8,CAR_DRAG=.3,ENTER_DIST=4.5;
 const isMobile=/Mobi|Android|iPhone|iPad/i.test(navigator.userAgent);
-let scene,camera,renderer,clock,player,velY=0,onGround=true;
+let scene,camera,renderer,clock,player,velY=0,onGround=true,canDoubleJump=true;
 let mF=0,mB=0,mL=0,mR=0,sprinting=false,yaw=0,pitch=.35;
 let cLat,cLon,spawnX=0,spawnZ=0,locName='',locKey='',spawnAddr='';
 let bData=[],rData=[],buildingAddrs=[],waterData=[];
@@ -3504,7 +3504,7 @@ function setupDesktop(){
     if(e.code==='F3'){e.preventDefault();document.getElementById('debug-panel').classList.toggle('show');return}
     if(e.code==='Tab'){e.preventDefault();toggleEdit();return}
     if(e.code==='KeyE'||e.code==='KeyF'){if(activeVehicle)exitV();else{const v=findNearest();if(v)enterV(v)}return}
-    switch(e.code){case'KeyW':case'ArrowUp':mF=1;break;case'KeyS':case'ArrowDown':mB=1;break;case'KeyA':case'ArrowLeft':mL=1;break;case'KeyD':case'ArrowRight':mR=1;break;case'ShiftLeft':case'ShiftRight':if(activeVehicle)carEBrake=1;else sprinting=true;break;case'Space':e.preventDefault();if(activeVehicle&&activeVehicle.userData.isAircraft){dropPaintBomb()}else if(player&&player.userData.wingsuit){player.userData.parachute=!player.userData.parachute;setS(player.userData.parachute?'Parachute!':'Wingsuit!')}else if(player&&player.userData.parachute){player.userData.parachute=false;player.userData.wingsuit=true;setS('Wingsuit!')}else if(!activeVehicle&&onGround){velY=JUMP;onGround=false}break}
+    switch(e.code){case'KeyW':case'ArrowUp':mF=1;break;case'KeyS':case'ArrowDown':mB=1;break;case'KeyA':case'ArrowLeft':mL=1;break;case'KeyD':case'ArrowRight':mR=1;break;case'ShiftLeft':case'ShiftRight':if(activeVehicle)carEBrake=1;else sprinting=true;break;case'Space':e.preventDefault();if(activeVehicle&&activeVehicle.userData.isAircraft){dropPaintBomb()}else if(player&&player.userData.wingsuit){player.userData.parachute=!player.userData.parachute;setS(player.userData.parachute?'Parachute!':'Wingsuit!')}else if(player&&player.userData.parachute){player.userData.parachute=false;player.userData.wingsuit=true;setS('Wingsuit!')}else if(!activeVehicle){if(onGround){velY=JUMP;onGround=false;canDoubleJump=true}else if(canDoubleJump){velY=JUMP;canDoubleJump=false}}break}
   });
   document.addEventListener('keyup',e=>{switch(e.code){case'KeyW':case'ArrowUp':mF=0;break;case'KeyS':case'ArrowDown':mB=0;break;case'KeyA':case'ArrowLeft':mL=0;break;case'KeyD':case'ArrowRight':mR=0;break;case'ShiftLeft':case'ShiftRight':sprinting=false;carEBrake=0;break}});
   let md=false,lmx=0,lmy=0,dragDist=0,mouseX=window.innerWidth/2,mouseY=window.innerHeight/2;
@@ -3607,7 +3607,7 @@ function updateBtns(){
     bn('mb-gas',()=>{carAccelInput=1},()=>{carAccelInput=0});bn('mb-brake',()=>{carBrakeInput=1},()=>{carBrakeInput=0});bn('mb-exit',()=>exitV());
   }else{
     ab.innerHTML='<div class="abtn" id="mb-jump">JMP</div><div class="abtn bl" id="mb-run">RUN</div><div class="abtn yl" id="mb-car" style="display:none">CAR</div>';
-    document.getElementById('mb-jump').addEventListener('touchstart',e=>{e.preventDefault();if(onGround){velY=JUMP;onGround=false}},{passive:false});
+    document.getElementById('mb-jump').addEventListener('touchstart',e=>{e.preventDefault();if(onGround){velY=JUMP;onGround=false;canDoubleJump=true}else if(canDoubleJump){velY=JUMP;canDoubleJump=false}},{passive:false});
     document.getElementById('mb-run').addEventListener('touchstart',e=>{e.preventDefault();sprinting=!sprinting;e.target.classList.toggle('on',sprinting);e.target.textContent=sprinting?'WLK':'RUN'},{passive:false});
   }
 }
@@ -4244,8 +4244,8 @@ function gameLoop(){
     const groundY=getSurfaceY(player.position.x,player.position.z)+.15;
     if(player.position.y<=groundY){
       // HARD LANDING CHECK
-      if(velY<-20){
-        // Too fast! Reset to home
+      if(velY<-60){
+        // Too fast! Reset to home (tripled threshold from -20 to -60)
         setS('CRASH! Too hard a landing...');
         setTimeout(()=>{respawn();setS('');},1000);
         velY=0;
@@ -4260,6 +4260,7 @@ function gameLoop(){
         }
       }
       onGround=true;
+      canDoubleJump=true; // Reset double jump on landing
     }else{
       onGround=false;
     }
