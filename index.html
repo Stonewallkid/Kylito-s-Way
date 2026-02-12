@@ -4208,15 +4208,13 @@ function gameLoop(){
     const im=dir.length();if(im>0)dir.normalize();dir.applyAxisAngle(new THREE.Vector3(0,1,0),yaw);
     const spd=P_SPD*(sprinting?SPRINT:1)*Math.min(im,1);
     const nx=player.position.x+dir.x*spd*dt,nz=player.position.z+dir.z*spd*dt;
-    // Check if we're on a rooftop (above ground level)
-    const currentRoofY=getBuildingRoofY(player.position.x,player.position.z);
-    const onRoof=currentRoofY!==null&&player.position.y>currentRoofY-0.5;
-    // Check for collision with buildings AND vehicles
-    const blockedByBuilding=!onRoof&&ptInBuilding(nx,nz);
+    const py=player.position.y; // Current player height
+    // Use 3D collision - allows flying OVER buildings when high enough
+    const blockedByBuilding=ptInBuilding3D(nx,py,nz);
     const blockedByVehicle=ptNearVehicle(nx,nz,null);
     if(!blockedByBuilding&&!blockedByVehicle){player.position.x=nx;player.position.z=nz}
-    else if(!ptInBuilding(nx,player.position.z)&&!ptNearVehicle(nx,player.position.z,null))player.position.x=nx;
-    else if(!ptInBuilding(player.position.x,nz)&&!ptNearVehicle(player.position.x,nz,null))player.position.z=nz;
+    else if(!ptInBuilding3D(nx,py,player.position.z)&&!ptNearVehicle(nx,player.position.z,null))player.position.x=nx;
+    else if(!ptInBuilding3D(player.position.x,py,nz)&&!ptNearVehicle(player.position.x,nz,null))player.position.z=nz;
     if(im>.1){
       let ty=Math.atan2(dir.x,dir.z),df=ty-player.rotation.y;while(df>Math.PI)df-=Math.PI*2;while(df<-Math.PI)df+=Math.PI*2;player.rotation.y+=df*.15;
       camYawTarget=player.rotation.y+Math.PI;
