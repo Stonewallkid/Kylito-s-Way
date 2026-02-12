@@ -3627,7 +3627,7 @@ function updateMinimap(){
     ctx.fillStyle='rgba(255,255,255,.2)';ctx.fillText('S',w-30,25+rsz);ctx.fillText('E',w-30+rsz/2,25+rsz/2);ctx.fillText('W',w-30-rsz/2,25+rsz/2);
   }
 }
-function updateCompass(){const n=document.getElementById('compass-needle'),hd=document.getElementById('compass-heading');if(!n)return;const d=((yaw*180/Math.PI)%360+360)%360;n.style.transform='translate(-50%,-100%) rotate('+d+'deg)';const dirs=['N','NE','E','SE','S','SW','W','NW'];const look=(((yaw*180/Math.PI)%360)+360)%360;hd.textContent=dirs[Math.round(look/45)%8]+' '+Math.round(look)+'°'}
+function updateCompass(){const n=document.getElementById('compass-needle'),hd=document.getElementById('compass-heading');if(!n)return;const d=((yaw*180/Math.PI)%360+360)%360;n.style.transform='translate(-50%,-100%) rotate('+d+'deg)';const dirs=['N','NE','E','SE','S','SW','W','NW'];const look=(((-yaw*180/Math.PI)%360)+360)%360;hd.textContent=dirs[Math.round(look/45)%8]+' '+Math.round(look)+'°'}
 
 // ═══ GAME LOOP ═══
 function gameLoop(){
