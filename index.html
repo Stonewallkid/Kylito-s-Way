@@ -2318,14 +2318,25 @@ const CUSTOM_BUILDINGS=[
   },
   {
     // Walton Arts Center - Modern performing arts theater
+    // Multi-section building with distinctive architecture
     address:'499 W Dickson',
     lat:36.0664397,lon:-94.1653563,
-    color:0x8a8a8a,      // Silver/grey metal siding
-    height:14,           // Tall theater building
-    roofColor:0x2a2a2a,  // Dark charcoal/black upper
+    color:0x9a9a9a,       // Silver/grey metal siding (lower section)
+    height:14,            // Tall theater building
     roofType:'flat',
     name:'Walton Arts Center',
-    sign:{text:'WALTON ARTS CENTER',color:0x222222,y:12} // Dark sign on upper section
+    // Detailed architecture
+    detailed:true,
+    sections:[
+      {fromY:0,toY:4,color:0x3a3a3a},     // Dark base/entrance level
+      {fromY:4,toY:10,color:0xa8a8a8},    // Silver horizontal siding (main)
+      {fromY:10,toY:14,color:0x2a2a2a}    // Dark upper band
+    ],
+    features:{
+      horizontalLines:true,  // Metal siding horizontal lines
+      glassEntrance:{width:0.6,height:3.5,color:0x88bbdd}, // Glass front
+      sign:{text:'WALTON ARTS CENTER',color:0xffffff,bgColor:0x222222,y:11}
+    }
   }
 ];
 
@@ -2419,31 +2430,90 @@ function buildWorld(osm,mapillaryData=[]){
           console.log('Custom building found:',customBld.name||customBld.address);
         }
 
-        const geo=new THREE.ExtrudeGeometry(shape,{depth:h+extraH,bevelEnabled:false});geo.rotateX(-Math.PI/2);
-        const col=customBld?new THREE.Color(customBld.color):bldColor(tags);
-        const mesh=new THREE.Mesh(geo,new THREE.MeshLambertMaterial({color:col}));
-        mesh.position.y=ty+0.15; // Offset to prevent z-fighting with terrain
-        mesh.castShadow=!isMobile;mesh.receiveShadow=!isMobile;scene.add(mesh);
-        bData.push({coords,height:h,baseY:ty});
+        // DETAILED CUSTOM BUILDINGS - multi-section architecture
+        if(customBld&&customBld.detailed&&customBld.sections){
+          // Build each section as a separate mesh with different colors
+          for(const sec of customBld.sections){
+            const secH=sec.toY-sec.fromY;
+            const secShape=new THREE.Shape();secShape.moveTo(coords[0].x,-coords[0].z);
+            for(let i=1;i<coords.length;i++)secShape.lineTo(coords[i].x,-coords[i].z);secShape.closePath();
+            const secGeo=new THREE.ExtrudeGeometry(secShape,{depth:secH,bevelEnabled:false});secGeo.rotateX(-Math.PI/2);
+            const secMesh=new THREE.Mesh(secGeo,new THREE.MeshLambertMaterial({color:sec.color}));
+            secMesh.position.y=ty+0.15+sec.fromY;
+            secMesh.castShadow=!isMobile;scene.add(secMesh);
+          }
+          // Add horizontal siding lines if specified
+          if(customBld.features&&customBld.features.horizontalLines){
+            const lineMat=new THREE.MeshBasicMaterial({color:0x666666});
+            for(let ly=2;ly<h-1;ly+=0.8){
+              // Create lines on each side of building
+              const lineH=0.05,lineD=0.08;
+              // Front and back lines
+              const lineGeoFB=new THREE.BoxGeometry(bw*0.95,lineH,lineD);
+              const lineFront=new THREE.Mesh(lineGeoFB,lineMat);
+              lineFront.position.set(cx,ty+0.15+ly,mnZ-lineD/2);scene.add(lineFront);
+              const lineBack=new THREE.Mesh(lineGeoFB,lineMat);
+              lineBack.position.set(cx,ty+0.15+ly,mxZ+lineD/2);scene.add(lineBack);
+              // Left and right lines
+              const lineGeoLR=new THREE.BoxGeometry(lineD,lineH,bd*0.95);
+              const lineLeft=new THREE.Mesh(lineGeoLR,lineMat);
+              lineLeft.position.set(mnX-lineD/2,ty+0.15+ly,cz);scene.add(lineLeft);
+              const lineRight=new THREE.Mesh(lineGeoLR,lineMat);
+              lineRight.position.set(mxX+lineD/2,ty+0.15+ly,cz);scene.add(lineRight);
+            }
+          }
+          // Add glass entrance if specified
+          if(customBld.features&&customBld.features.glassEntrance){
+            const gl=customBld.features.glassEntrance;
+            const glassW=bw*gl.width,glassH=gl.height;
+            const glassMat=new THREE.MeshLambertMaterial({color:gl.color,transparent:true,opacity:0.6});
+            const glassGeo=new THREE.BoxGeometry(glassW,glassH,0.2);
+            const glassMesh=new THREE.Mesh(glassGeo,glassMat);
+            // Position on front of building (north side facing Dickson)
+            glassMesh.position.set(cx,ty+0.15+glassH/2,mnZ-0.15);
+            scene.add(glassMesh);
+          }
+          // Add sign with background if specified
+          if(customBld.features&&customBld.features.sign){
+            const s=customBld.features.sign;
+            const signW=Math.min(bw*0.8,12);
+            const signH=1.5;
+            // Background panel
+            const bgGeo=new THREE.BoxGeometry(signW,signH,0.2);
+            const bgMat=new THREE.MeshLambertMaterial({color:s.bgColor||0x222222});
+            const bgMesh=new THREE.Mesh(bgGeo,bgMat);
+            bgMesh.position.set(cx,ty+0.15+(s.y||10),mnZ-0.25);
+            scene.add(bgMesh);
+          }
+          bData.push({coords,height:h,baseY:ty});
+        }else{
+          // Standard building rendering
+          const geo=new THREE.ExtrudeGeometry(shape,{depth:h+extraH,bevelEnabled:false});geo.rotateX(-Math.PI/2);
+          const col=customBld?new THREE.Color(customBld.color):bldColor(tags);
+          const mesh=new THREE.Mesh(geo,new THREE.MeshLambertMaterial({color:col}));
+          mesh.position.y=ty+0.15; // Offset to prevent z-fighting with terrain
+          mesh.castShadow=!isMobile;mesh.receiveShadow=!isMobile;scene.add(mesh);
+          bData.push({coords,height:h,baseY:ty});
 
-        // Add sign for custom buildings
-        if(customBld&&customBld.sign){
-          const s=customBld.sign;
-          const signW=s.vertical?0.8:Math.min(bw*0.6,4);
-          const signH=s.vertical?2.5:1.2;
-          const signD=0.3;
-          const signGeo=s.circular?
-            new THREE.CylinderGeometry(1,1,0.3,16):
-            new THREE.BoxGeometry(signW,signH,signD);
-          const signMat=new THREE.MeshLambertMaterial({color:s.color||0xffffff});
-          const signMesh=new THREE.Mesh(signGeo,signMat);
-          const signY=ty+(s.y||h-1);
-          if(s.circular)signMesh.rotation.z=Math.PI/2;
-          if(s.vertical)signMesh.rotation.z=0;
-          // Position sign on front of building
-          const frontAngle=Math.atan2(coords[1].z-coords[0].z,coords[1].x-coords[0].x);
-          signMesh.position.set(cx+Math.cos(frontAngle)*bw*0.3,signY,cz+Math.sin(frontAngle)*bd*0.3);
-          scene.add(signMesh);
+          // Add sign for custom buildings (simple version)
+          if(customBld&&customBld.sign){
+            const s=customBld.sign;
+            const signW=s.vertical?0.8:Math.min(bw*0.6,4);
+            const signH=s.vertical?2.5:1.2;
+            const signD=0.3;
+            const signGeo=s.circular?
+              new THREE.CylinderGeometry(1,1,0.3,16):
+              new THREE.BoxGeometry(signW,signH,signD);
+            const signMat=new THREE.MeshLambertMaterial({color:s.color||0xffffff});
+            const signMesh=new THREE.Mesh(signGeo,signMat);
+            const signY=ty+(s.y||h-1);
+            if(s.circular)signMesh.rotation.z=Math.PI/2;
+            if(s.vertical)signMesh.rotation.z=0;
+            // Position sign on front of building
+            const frontAngle=Math.atan2(coords[1].z-coords[0].z,coords[1].x-coords[0].x);
+            signMesh.position.set(cx+Math.cos(frontAngle)*bw*0.3,signY,cz+Math.sin(frontAngle)*bd*0.3);
+            scene.add(signMesh);
+          }
         }
 
         // Custom building with peaked roof
@@ -3505,6 +3575,10 @@ function gameLoop(){
       v.userData.angle=angle;
       v.rotation.set(-pitch,angle,roll); // Negative pitch so nose-up looks up
 
+      // Check for NPC collision (airplane hits NPCs)
+      const hitNPC=checkNPCHit(nx,ny,nz,3);
+      if(hitNPC)sendNPCToSleep(hitNPC);
+
       // Position player riding on top of plane (broomstick style!)
       if(player&&player.visible){
         player.position.copy(v.position);
@@ -3557,6 +3631,11 @@ function gameLoop(){
     v.userData.speed=spd;v.rotation.y=v.userData.angle;
     // Follow terrain - sit on road surface
     v.position.y=getTerrainY(v.position.x,v.position.z)+.15;
+    // Check for NPC collision (car hits NPCs)
+    if(Math.abs(spd)>1){
+      const hitNPC=checkNPCHit(v.position.x,v.position.y+0.5,v.position.z,2);
+      if(hitNPC)sendNPCToSleep(hitNPC);
+    }
     // Tilt vehicle to match terrain slope
     if(terrainElevs){
       const probeLen=2;const fa=v.userData.angle;
