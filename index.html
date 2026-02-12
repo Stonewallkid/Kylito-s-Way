@@ -3193,9 +3193,9 @@ function buildWorld(osm,mapillaryData=[]){
     for(let i=0;i<fallbackLamps;i++)addLamp((Math.random()-.5)*RADIUS*1.5,(Math.random()-.5)*RADIUS*1.5);
   }
 
-  // Custom objects: Food Truck Court - north side of Dickson, across from Buster's/420 W Dickson
-  // 420 W Dickson is at lon -94.1650, north side has higher latitude
-  const ftcPos=ll(36.0670,-94.1685);
+  // Custom objects: Food Truck Court - 440 W Dickson Street alley
+  // The street has been converted to an alley with food trucks
+  const ftcPos=ll(36.06652,-94.16413);
   if(Math.abs(ftcPos.x)<RADIUS&&Math.abs(ftcPos.z)<RADIUS){
     // Add food trucks - blue, red, yellow
     addFoodTruck(ftcPos.x-4,ftcPos.z,0x2255aa);   // Blue - Burton's style
@@ -3504,7 +3504,7 @@ function setupDesktop(){
     if(e.code==='F3'){e.preventDefault();document.getElementById('debug-panel').classList.toggle('show');return}
     if(e.code==='Tab'){e.preventDefault();toggleEdit();return}
     if(e.code==='KeyE'||e.code==='KeyF'){if(activeVehicle)exitV();else{const v=findNearest();if(v)enterV(v)}return}
-    switch(e.code){case'KeyW':case'ArrowUp':mF=1;break;case'KeyS':case'ArrowDown':mB=1;break;case'KeyA':case'ArrowLeft':mL=1;break;case'KeyD':case'ArrowRight':mR=1;break;case'ShiftLeft':case'ShiftRight':if(activeVehicle)carEBrake=1;else sprinting=true;break;case'Space':e.preventDefault();if(activeVehicle&&activeVehicle.userData.isAircraft){dropPaintBomb()}else if(player&&player.userData.wingsuit){player.userData.parachute=!player.userData.parachute;setS(player.userData.parachute?'Parachute!':'Wingsuit!')}else if(player&&player.userData.parachute){player.userData.parachute=false;player.userData.wingsuit=true;setS('Wingsuit!')}else if(!activeVehicle){if(onGround){velY=JUMP;onGround=false;canDoubleJump=true}else if(canDoubleJump){velY=JUMP;canDoubleJump=false}}break}
+    switch(e.code){case'KeyW':case'ArrowUp':mF=1;break;case'KeyS':case'ArrowDown':mB=1;break;case'KeyA':case'ArrowLeft':mL=1;break;case'KeyD':case'ArrowRight':mR=1;break;case'ShiftLeft':case'ShiftRight':if(activeVehicle)carEBrake=1;else sprinting=true;break;case'Space':e.preventDefault();if(activeVehicle&&activeVehicle.userData.isAircraft){dropPaintBomb()}else if(player&&player.userData.wingsuit){player.userData.parachute=!player.userData.parachute;setS(player.userData.parachute?'Parachute!':'Wingsuit!')}else if(player&&player.userData.parachute){player.userData.parachute=false;player.userData.wingsuit=true;setS('Wingsuit!')}else if(!activeVehicle){if(onGround){velY=JUMP;onGround=false;canDoubleJump=true}else if(canDoubleJump){velY=JUMP*0.9;canDoubleJump=false;setS('Double Jump!');setTimeout(()=>setS(''),500)}}break}
   });
   document.addEventListener('keyup',e=>{switch(e.code){case'KeyW':case'ArrowUp':mF=0;break;case'KeyS':case'ArrowDown':mB=0;break;case'KeyA':case'ArrowLeft':mL=0;break;case'KeyD':case'ArrowRight':mR=0;break;case'ShiftLeft':case'ShiftRight':sprinting=false;carEBrake=0;break}});
   let md=false,lmx=0,lmy=0,dragDist=0,mouseX=window.innerWidth/2,mouseY=window.innerHeight/2;
