@@ -1593,7 +1593,7 @@ function buildChunk(chunk,osm,center){
         const geo=new THREE.ExtrudeGeometry(shape,{depth:h,bevelEnabled:false});geo.rotateX(-Math.PI/2);
         const col=bldColor(tags);
         const mesh=new THREE.Mesh(geo,new THREE.MeshLambertMaterial({color:col}));
-        mesh.position.y=ty;mesh.castShadow=!isMobile;chunk.group.add(mesh);
+        mesh.position.y=ty+0.15;mesh.castShadow=!isMobile;chunk.group.add(mesh); // Offset to prevent z-fighting
         chunk.buildings.push({coords,height:h,baseY:ty});
         bData.push({coords,height:h,baseY:ty,chunkKey:getChunkKey(chunk.cx,chunk.cz)});
         // Add roof for residential
@@ -2422,7 +2422,7 @@ function buildWorld(osm,mapillaryData=[]){
         const geo=new THREE.ExtrudeGeometry(shape,{depth:h+extraH,bevelEnabled:false});geo.rotateX(-Math.PI/2);
         const col=customBld?new THREE.Color(customBld.color):bldColor(tags);
         const mesh=new THREE.Mesh(geo,new THREE.MeshLambertMaterial({color:col}));
-        mesh.position.y=ty+0.05; // Slight offset to prevent z-fighting with terrain
+        mesh.position.y=ty+0.15; // Offset to prevent z-fighting with terrain
         mesh.castShadow=!isMobile;mesh.receiveShadow=!isMobile;scene.add(mesh);
         bData.push({coords,height:h,baseY:ty});
 
