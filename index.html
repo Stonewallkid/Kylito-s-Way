@@ -2522,6 +2522,18 @@ const CUSTOM_BUILDINGS=[
     roofType:'flat',
     name:'Walton Arts Center',
     sign:{text:'WAC',color:0x4477aa,y:14}  // Blue sign
+  },
+  {
+    // Old Main - University of Arkansas iconic Victorian building with twin towers
+    name:'Old Main',
+    lat:36.06870,lon:-94.17170,
+    color:0x8B4513,       // Rich red-brown brick (SaddleBrown)
+    height:18,            // Main building ~4 stories
+    roofColor:0x2F4F4F,   // Dark slate grey mansard-style roof
+    roofType:'peaked',
+    twinTowers:true,      // Special flag for twin tower rendering
+    towerHeight:30,       // Towers are taller than main building
+    sign:{text:'OLD MAIN',color:0xFFD700,y:15}
   }
 ];
 
@@ -2751,7 +2763,35 @@ function buildWorld(osm,mapillaryData=[]){
           const roofCol=customBld.roofColor||0x333333;
           const roofMesh=new THREE.Mesh(roofGeo,new THREE.MeshLambertMaterial({color:roofCol}));
           roofMesh.position.set(cx,ty+0.15+totalH+roofH/2,cz);roofMesh.rotation.y=Math.PI/4;roofMesh.castShadow=!isMobile;scene.add(roofMesh);
-        }else if(isRes&&h<12&&!customBld){
+        }
+        // Twin towers for Old Main style buildings
+        if(customBld&&customBld.twinTowers){
+          const towerH=customBld.towerHeight||h*1.5;
+          const towerW=Math.min(bw,bd)*0.25;
+          const towerMat=new THREE.MeshLambertMaterial({color:customBld.color||0x8B4513});
+          const roofMat=new THREE.MeshLambertMaterial({color:customBld.roofColor||0x2F4F4F});
+          // Left tower (west side)
+          const tower1=new THREE.Mesh(new THREE.BoxGeometry(towerW,towerH,towerW),towerMat);
+          tower1.position.set(mnX+towerW/2+1,ty+0.15+towerH/2,cz);tower1.castShadow=!isMobile;scene.add(tower1);
+          // Left tower peaked roof
+          const roof1=new THREE.Mesh(new THREE.ConeGeometry(towerW*0.8,towerW*1.5,4),roofMat);
+          roof1.position.set(mnX+towerW/2+1,ty+0.15+towerH+towerW*0.75,cz);roof1.rotation.y=Math.PI/4;scene.add(roof1);
+          // Right tower (east side)
+          const tower2=new THREE.Mesh(new THREE.BoxGeometry(towerW,towerH,towerW),towerMat);
+          tower2.position.set(mxX-towerW/2-1,ty+0.15+towerH/2,cz);tower2.castShadow=!isMobile;scene.add(tower2);
+          // Right tower peaked roof
+          const roof2=new THREE.Mesh(new THREE.ConeGeometry(towerW*0.8,towerW*1.5,4),roofMat);
+          roof2.position.set(mxX-towerW/2-1,ty+0.15+towerH+towerW*0.75,cz);roof2.rotation.y=Math.PI/4;scene.add(roof2);
+          // Add windows to towers
+          const winMat=new THREE.MeshBasicMaterial({color:0xffffcc,transparent:true,opacity:0.5});
+          for(let wy=4;wy<towerH-2;wy+=4){
+            const win1=new THREE.Mesh(new THREE.PlaneGeometry(1,1.5),winMat);
+            win1.position.set(mnX+0.5,ty+0.15+wy,cz);win1.rotation.y=Math.PI/2;scene.add(win1);
+            const win2=new THREE.Mesh(new THREE.PlaneGeometry(1,1.5),winMat);
+            win2.position.set(mxX-0.5,ty+0.15+wy,cz);win2.rotation.y=-Math.PI/2;scene.add(win2);
+          }
+        }
+        if(isRes&&h<12&&!customBld){
           // HOUSE: Add peaked roof (at top of extended building)
           const totalH=h+extraH;
           const roofH=h*.4+1;
